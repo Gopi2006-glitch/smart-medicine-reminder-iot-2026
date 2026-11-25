@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --color-smartmed-navy: #0B1220;
+  --color-smartmed-card: #151F32;
+  --color-smartmed-panel: #1E293B;
+  --color-smartmed-emerald: #00D6A0;
+  --color-smartmed-medblue: #38BDF8;
+  --color-smartmed-amber: #F59E0B;
+  --color-smartmed-softred: #F87171;
+  --color-smartmed-textmain: #F8FAFC;
+  --color-smartmed-textmuted: #94A3B8;
+
+  /* Legacy aliases for backward compatibility */
+  --color-smartmed-midnight: #0B1220;
+  --color-smartmed-darkplum: #151F32;
+  --color-smartmed-royalplum: #1E293B;
+  --color-smartmed-rose: #38BDF8;
+  --color-smartmed-blush: #1E293B;
+  --color-smartmed-coral: #F87171;
+}
+
+:root {
+  --navy: #0B1220;
+  --card: #151F32;
+  --panel: #1E293B;
+  --emerald: #00D6A0;
+  --medblue: #38BDF8;
+  --amber: #F59E0B;
+  --softred: #F87171;
+  --textmain: #F8FAFC;
+  --textmuted: #94A3B8;
+
+  /* Legacy mappings */
+  --midnight: #0B1220;
+  --darkplum: #151F32;
+  --royalplum: #1E293B;
+  --rose: #38BDF8;
+  --blush: #1E293B;
+  --coral: #F87171;
+}
+
+@layer base {
+  body {
+    background-color: #0B1220;
+    color: #F8FAFC;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Custom scrollbar matching dark mode palette */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B1220;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38BDF8;
+}
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #0B1220 !important;
+  }
+  aside,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+}

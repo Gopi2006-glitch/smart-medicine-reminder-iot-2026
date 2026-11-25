@@ -1,0 +1,2088 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartMed – Smart Medicine Reminder & IoT Health Monitoring</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            smartmed: {
+              navy: '#0B1220',
+              card: '#151F32',
+              panel: '#1E293B',
+              emerald: '#00D6A0',
+              medblue: '#38BDF8',
+              amber: '#F59E0B',
+              softred: '#F87171',
+              textmain: '#F8FAFC',
+              textmuted: '#94A3B8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0B1220; color: #F8FAFC; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0B1220; }
+    ::-webkit-scrollbar-thumb { background: #1E293B; border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #38BDF8; }
+
+    @media print {
+      body { background: #FFFFFF !important; color: #0B1220 !important; }
+      aside, header, #alert-banner, #estop-banner, #health-alert-banner, .no-print { display: none !important; }
+      main { padding: 0 !important; max-width: 100% !important; }
+      .page-view { display: none !important; }
+      #page-reports { display: block !important; }
+      .print-only-header { display: block !important; color: #0B1220 !important; }
+    }
+  </style>
+</head>
+<body class="bg-[#0B1220] text-[#F8FAFC] antialiased min-h-screen flex flex-col selection:bg-[#00D6A0]/30 selection:text-[#00D6A0]">
+
+  <!-- EMERGENCY STOP LATCH BANNER -->
+  <div id="estop-banner" class="hidden bg-[#151F32] text-[#F8FAFC] px-4 sm:px-6 py-3 shadow-2xl flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#F87171] z-40">
+    <div class="flex items-center gap-3">
+      <span class="px-2.5 py-1 rounded-full bg-[#F87171] text-white text-[10px] font-black uppercase tracking-wider animate-pulse">EMERGENCY STOP LATCHED</span>
+      <span class="text-xs sm:text-sm font-semibold text-[#94A3B8]">All chamber servo motors and buzzer alarms have been halted. Opening chambers is locked until cleared.</span>
+    </div>
+    <button onclick="clearEmergencyStop()" class="px-4 py-1.5 rounded-xl bg-[#F87171] text-white hover:bg-[#ef4444] text-xs font-extrabold cursor-pointer transition-all shadow-md">
+      Clear Emergency Stop & Resume
+    </button>
+  </div>
+
+  <!-- ACTIVE MEDICINE REMINDER + SNOOZE BANNER -->
+  <div id="alert-banner" class="hidden bg-gradient-to-r from-[#151F32] via-[#1E293B] to-[#151F32] text-[#F8FAFC] px-4 sm:px-6 py-3.5 shadow-2xl flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#00D6A0] z-30">
+    <div class="flex items-center gap-3.5">
+      <div class="w-10 h-10 rounded-xl bg-[#00D6A0]/20 border border-[#00D6A0]/40 text-[#00D6A0] flex items-center justify-center shrink-0 animate-bounce font-bold text-lg">!</div>
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="bg-[#00D6A0]/20 text-[#00D6A0] text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border border-[#00D6A0]/40">
+            MEDICINE TIME!
+          </span>
+          <span id="alert-attempt-badge" class="bg-[#1E293B] text-[#38BDF8] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#334155]">
+            Attempt 1 of 3
+          </span>
+          <span id="alert-snooze-countdown" class="text-xs font-mono font-bold text-[#F59E0B]"></span>
+        </div>
+        <h3 id="alert-banner-text" class="text-base font-extrabold tracking-tight mt-0.5 text-[#F8FAFC]">
+          Chamber Open: Take your medicine
+        </h3>
+        <p class="text-xs text-[#94A3B8] mt-0.5">Unacknowledged doses repeat every 5 minutes (max 3 attempts) before being marked MISSED.</p>
+      </div>
+    </div>
+    <button onclick="acknowledgeReminder()" class="bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg transition-all cursor-pointer">
+      Acknowledge Dose & Close Chamber
+    </button>
+  </div>
+
+  <!-- ABNORMAL HEALTH ALERT BANNER -->
+  <div id="health-alert-banner" class="hidden bg-[#151F32] text-[#F8FAFC] px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-[#F59E0B]/50 z-20">
+    <div class="flex items-center gap-2.5 text-xs">
+      <span class="px-2 py-0.5 rounded-full bg-[#F59E0B] text-[#0B1220] font-black uppercase text-[10px]">VITAL ALERT</span>
+      <span id="health-alert-banner-text" class="font-bold text-[#F8FAFC]">Abnormal reading detected.</span>
+    </div>
+    <button onclick="navigateTo('health')" class="text-xs font-bold text-[#38BDF8] underline hover:text-[#00D6A0] cursor-pointer">Inspect Alerts &rarr;</button>
+  </div>
+
+  <div class="flex flex-1 min-h-screen relative">
+    <!-- Mobile Backdrop -->
+    <div id="sidebar-backdrop" onclick="toggleMobileSidebar(false)" class="hidden fixed inset-0 bg-[#0B1220]/80 z-30 lg:hidden"></div>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside id="app-sidebar" class="fixed lg:sticky top-0 left-0 w-64 bg-[#151F32] border-r border-[#1E293B] flex flex-col justify-between transition-transform duration-300 -translate-x-full lg:translate-x-0 z-40 h-screen text-[#94A3B8] shrink-0">
+      <div class="overflow-y-auto flex-1">
+        <div class="h-16 flex items-center justify-between px-5 border-b border-[#1E293B]">
+          <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#00D6A0] to-[#38BDF8] text-[#0B1220] flex items-center justify-center shrink-0 shadow-md shadow-[#00D6A0]/20">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path><path d="M12 5v6m-3-3h6"></path></svg>
+            </div>
+            <div>
+              <span class="font-extrabold text-[#F8FAFC] text-lg tracking-tight leading-none block">Smart<span class="text-[#00D6A0]">Med</span></span>
+              <span class="text-[10px] text-[#38BDF8] font-semibold uppercase tracking-wider block mt-0.5">IoT Health Platform</span>
+            </div>
+          </div>
+          <button onclick="toggleMobileSidebar(false)" class="lg:hidden text-[#94A3B8] hover:text-[#F8FAFC] text-xl cursor-pointer">&times;</button>
+        </div>
+
+        <nav class="p-3 space-y-1 text-xs font-semibold">
+          <button onclick="navigateTo('dashboard')" id="nav-dashboard" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all bg-[#1E293B] text-[#F8FAFC] border-l-4 border-[#00D6A0] shadow-sm cursor-pointer">
+            <span>1. Dashboard</span>
+          </button>
+          <button onclick="navigateTo('health')" id="nav-health" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>2. Health Monitoring</span>
+          </button>
+          <button onclick="navigateTo('medicines')" id="nav-medicines" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>3. Medicine Management</span>
+          </button>
+          <button onclick="navigateTo('chambers')" id="nav-chambers" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>4. Chamber Control</span>
+          </button>
+          <button onclick="navigateTo('inventory')" id="nav-inventory" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>5. Medicine Inventory</span>
+          </button>
+          <button onclick="navigateTo('history')" id="nav-history" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>6. Reminder History</span>
+          </button>
+          <button onclick="navigateTo('reports')" id="nav-reports" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>7. Weekly Reports</span>
+          </button>
+          <button onclick="navigateTo('device')" id="nav-device" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>8. Device Monitoring</span>
+          </button>
+          <button onclick="navigateTo('settings')" id="nav-settings" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all text-[#94A3B8] hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] cursor-pointer">
+            <span>9. Settings</span>
+          </button>
+          <button onclick="navigateTo('about')" id="nav-about" class="nav-btn w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-left transition-all text-[#94A3B8]/70 hover:bg-[#1E293B]/70 hover:text-[#F8FAFC] mt-2 cursor-pointer">
+            <span>About Project & Ethics</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="p-3 border-t border-[#1E293B]">
+        <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-[#F8FAFC]">System State</span>
+            <span id="sidebar-mode-badge" class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40">
+              OFFLINE
+            </span>
+          </div>
+          <p id="sidebar-conn-desc" class="text-[11px] text-[#94A3B8] leading-snug">
+            Waiting for ESP32 telemetry heartbeat.
+          </p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- TOP BAR -->
+      <header class="h-16 bg-[#151F32]/95 backdrop-blur-md border-b border-[#1E293B] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-10 shadow-lg">
+        <div class="flex items-center gap-3 sm:gap-5">
+          <button onclick="toggleMobileSidebar(true)" class="lg:hidden p-2 rounded-xl border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] cursor-pointer" aria-label="Open Navigation">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div>
+            <h2 class="text-sm font-bold text-[#F8FAFC] leading-tight">
+              Patient: <span id="header-patient-name" class="text-[#00D6A0]">Robert Davis</span>
+            </h2>
+            <span class="text-[11px] text-[#94A3B8] font-medium hidden sm:inline">SmartMed Clinical Telemetry Station</span>
+          </div>
+          <div class="hidden md:flex items-center gap-2 px-3 py-1 bg-[#1E293B] border border-[#334155] rounded-lg text-xs font-medium text-[#F8FAFC]">
+            <span id="header-date">--</span>
+            <span class="text-[#38BDF8]">&bull;</span>
+            <span id="header-clock" class="font-mono font-semibold text-[#00D6A0]">--:--:--</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+          <button onclick="triggerEmergencyStop()" class="px-3 py-1.5 rounded-xl bg-[#F87171] hover:bg-[#ef4444] text-white text-xs font-extrabold shadow-md cursor-pointer transition-all" title="Immediately halt all servos & buzzers">
+            E-STOP
+          </button>
+
+          <button onclick="toggleDemoMode()" id="btn-demo-mode" class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-[#38BDF8]">
+            <span id="demo-dot" class="w-2 h-2 rounded-full bg-[#38BDF8]"></span>
+            <span id="demo-mode-label" class="hidden sm:inline">Live Hardware Mode</span>
+          </button>
+
+          <div id="wifi-badge" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#F87171]/10 border-[#F87171]/40 text-[#F87171]">
+            <span id="wifi-ip-text">ESP32: OFFLINE</span>
+          </div>
+
+          <button onclick="toggleNotifications()" class="relative p-2 text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-[#1E293B] rounded-xl transition-colors cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span id="unread-notif-badge" class="hidden absolute top-1.5 right-1.5 min-w-[18px] h-[18px] bg-[#F87171] text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-[#151F32]">0</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+
+        <!-- ============================================================= -->
+        <!-- 1. DASHBOARD PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-dashboard" class="page-view space-y-6">
+          <!-- Hero Section -->
+          <div class="bg-gradient-to-r from-[#151F32] via-[#1E293B] to-[#151F32] rounded-2xl p-6 text-[#F8FAFC] shadow-2xl border border-[#38BDF8]/20">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div class="space-y-1.5">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span id="hero-conn-badge" class="text-xs font-bold uppercase tracking-wider bg-[#F87171]/20 text-[#F87171] px-2.5 py-0.5 rounded-full border border-[#F87171]/40">
+                    ESP32 OFFLINE
+                  </span>
+                  <span class="text-xs text-[#94A3B8]">Real-Time IoT Healthcare & Dispenser</span>
+                </div>
+                <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-[#F8FAFC]">SmartMed Healthcare Control Center</h1>
+                <p class="text-xs md:text-sm text-[#94A3B8] max-w-2xl">
+                  Continuous TMP117 & MAX30102 monitoring (60–100 BPM | 90–100% SpO₂ | 36.1–37.2 °C), offline DS3231 RTC scheduling with 3-attempt snooze, and independent GPIO 32/26/27 chamber control.
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2.5">
+                <button onclick="navigateTo('chambers')" class="bg-gradient-to-r from-[#00D6A0] to-[#38BDF8] hover:opacity-95 text-[#0B1220] font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg cursor-pointer transition-all">
+                  Chamber Control
+                </button>
+                <button onclick="navigateTo('reports')" class="bg-[#1E293B] hover:bg-[#334155] text-[#F8FAFC] font-semibold text-xs px-4 py-2.5 rounded-xl border border-[#334155] cursor-pointer transition-all">
+                  Weekly Reports
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 Vital Cards (Strictly Real Readings or -- When Absent) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg hover:border-[#38BDF8]/40 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-[#38BDF8] uppercase tracking-wider">Heart Rate</span>
+                <span id="dash-hr-level" class="px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]">NO DATA</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="dash-hr-val" class="text-3xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-xs font-semibold text-[#38BDF8]">BPM</span>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-[#1E293B] flex justify-between text-[11px] text-[#94A3B8]">
+                <span>Normal: 60–100 BPM</span>
+                <span>MAX30102</span>
+              </div>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg hover:border-[#00D6A0]/40 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-[#00D6A0] uppercase tracking-wider">Blood Oxygen (SpO₂)</span>
+                <span id="dash-spo2-level" class="px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]">NO DATA</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="dash-spo2-val" class="text-3xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-xs font-semibold text-[#00D6A0]">%</span>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-[#1E293B] flex justify-between text-[11px] text-[#94A3B8]">
+                <span>Normal: 90–100%</span>
+                <span>Est. PPG Ratio</span>
+              </div>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg hover:border-[#F59E0B]/40 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-[#F59E0B] uppercase tracking-wider">Body Temperature</span>
+                <span id="dash-temp-level" class="px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]">NO DATA</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="dash-temp-val" class="text-3xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-xs font-semibold text-[#F59E0B]">°C</span>
+                <span id="dash-temp-f-val" class="text-xs text-[#94A3B8] font-mono"></span>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-[#1E293B] flex justify-between text-[11px] text-[#94A3B8]">
+                <span>Normal: 36.1–37.2°C</span>
+                <span>TMP117</span>
+              </div>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg hover:border-[#38BDF8]/40 transition-all">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-[#38BDF8] uppercase tracking-wider">ESP32 Link & Bus</span>
+                <span id="dash-esp-conn-pill" class="px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40">OFFLINE</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="dash-status-val" class="text-xl font-extrabold text-[#F8FAFC] truncate">WAITING DATA</span>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-[#1E293B] flex justify-between text-[11px] text-[#94A3B8]">
+                <span id="dash-ultrasonic-mini">Ultrasonic: SENSOR ERROR</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chart + Next Reminder / Snooze / Completion Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-base font-bold text-[#F8FAFC]">Live Health Telemetry Waveforms</h2>
+                  <p id="dash-chart-subtitle" class="text-xs text-[#38BDF8]">Heart Rate (BPM) & SpO₂ (%) Trends</p>
+                </div>
+                <button onclick="navigateTo('health')" class="text-xs font-bold text-[#38BDF8] hover:text-[#00D6A0] hover:underline cursor-pointer">
+                  Full Telemetry &rarr;
+                </button>
+              </div>
+              <div id="dash-chart-empty" class="hidden h-56 rounded-xl bg-[#0B1220] border border-dashed border-[#334155] flex items-center justify-center text-xs text-[#94A3B8] font-semibold">
+                No telemetry records for current mode yet. Connect ESP32 or enable Demo Mode.
+              </div>
+              <div id="dash-chart-wrap" class="h-64 w-full">
+                <canvas id="dashboardChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Next Reminder + Snooze Control + Today's Completion -->
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between mb-3">
+                  <h2 class="text-base font-bold text-[#F8FAFC]">Today's Reminders</h2>
+                  <button onclick="navigateTo('medicines')" class="text-xs font-bold text-[#38BDF8] hover:underline cursor-pointer">Edit Schedules</button>
+                </div>
+
+                <div class="bg-[#1E293B] border border-[#38BDF8]/30 rounded-xl p-3.5 mb-3">
+                  <span class="text-[#38BDF8] text-[10px] font-bold uppercase tracking-wider block">NEXT SCHEDULED DOSE</span>
+                  <h4 id="dash-next-med-name" class="font-extrabold text-[#F8FAFC] text-base mt-0.5">--</h4>
+                  <p id="dash-next-med-dose" class="text-xs text-[#94A3B8] mt-0.5">--</p>
+                  <div class="mt-2 flex items-center justify-between">
+                    <span class="text-xs font-mono font-bold text-[#00D6A0] bg-[#151F32] border border-[#334155] px-2 py-1 rounded">
+                      Due: <span id="dash-next-med-time">--:--</span>
+                    </span>
+                    <button id="btn-demo-trigger" onclick="triggerDemoReminder()" class="hidden text-[11px] px-2.5 py-1 rounded-lg bg-[#38BDF8] text-[#0B1220] font-bold hover:bg-[#00D6A0] cursor-pointer transition-all">
+                      Test Snooze Flow
+                    </button>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div class="bg-[#00D6A0]/10 border border-[#00D6A0]/30 rounded-xl p-2.5">
+                    <span id="dash-count-completed" class="text-xl font-extrabold text-[#00D6A0] font-mono">0</span>
+                    <span class="text-[10px] font-semibold text-[#94A3B8] block mt-0.5">Completed</span>
+                  </div>
+                  <div class="bg-[#F59E0B]/10 border border-[#F59E0B]/30 rounded-xl p-2.5">
+                    <span id="dash-count-pending" class="text-xl font-extrabold text-[#F59E0B] font-mono">0</span>
+                    <span class="text-[10px] font-semibold text-[#94A3B8] block mt-0.5">Upcoming</span>
+                  </div>
+                  <div class="bg-[#F87171]/10 border border-[#F87171]/30 rounded-xl p-2.5">
+                    <span id="dash-count-missed" class="text-xl font-extrabold text-[#F87171] font-mono">0</span>
+                    <span class="text-[10px] font-semibold text-[#F87171] block mt-0.5">Missed</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-3 border-t border-[#1E293B] flex items-center justify-between gap-2">
+                <button onclick="acknowledgeReminder()" class="flex-1 py-2 rounded-xl bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] text-xs font-bold cursor-pointer transition-all">
+                  Acknowledge Active
+                </button>
+                <button onclick="triggerEmergencyStop()" class="px-3 py-2 rounded-xl bg-[#F87171] hover:bg-[#ef4444] text-white text-xs font-bold cursor-pointer transition-all">
+                  Stop All
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3 Chamber Live Status + Recent Alerts + Weekly Summary Row -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 3 Chambers Summary -->
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg space-y-3">
+              <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-[#F8FAFC]">3 Chamber Statuses</h2>
+                <button onclick="navigateTo('chambers')" class="text-xs font-bold text-[#38BDF8] hover:underline cursor-pointer">Open Control &rarr;</button>
+              </div>
+              <div class="space-y-2.5 text-xs">
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#1E293B] border border-[#334155]">
+                  <div><strong class="text-[#F8FAFC]">Chamber 1</strong> <span class="font-mono text-[10px] text-[#38BDF8]">(GPIO 32)</span></div>
+                  <span id="dash-servo1-state" class="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-[#151F32] text-[#94A3B8] border border-[#334155]">CLOSED</span>
+                </div>
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#1E293B] border border-[#334155]">
+                  <div><strong class="text-[#F8FAFC]">Chamber 2</strong> <span class="font-mono text-[10px] text-[#38BDF8]">(GPIO 26)</span></div>
+                  <span id="dash-servo2-state" class="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-[#151F32] text-[#94A3B8] border border-[#334155]">CLOSED</span>
+                </div>
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#1E293B] border border-[#334155]">
+                  <div><strong class="text-[#F8FAFC]">Chamber 3</strong> <span class="font-mono text-[10px] text-[#38BDF8]">(GPIO 27)</span></div>
+                  <span id="dash-servo3-state" class="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-[#151F32] text-[#94A3B8] border border-[#334155]">CLOSED</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg space-y-3">
+              <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-[#F8FAFC]">Recent Health & Dose Alerts</h2>
+                <button onclick="toggleNotifications()" class="text-xs font-bold text-[#38BDF8] hover:underline cursor-pointer">View All</button>
+              </div>
+              <div id="dash-recent-alerts" class="space-y-2 text-xs max-h-44 overflow-y-auto">
+                <p class="text-[#94A3B8] italic">No recent alerts recorded.</p>
+              </div>
+            </div>
+
+            <!-- Weekly Summary Preview -->
+            <div class="bg-[#151F32] text-[#F8FAFC] rounded-2xl p-5 shadow-lg space-y-3 border border-[#38BDF8]/20">
+              <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-[#F8FAFC]">7-Day Clinical Summary</h2>
+                <button onclick="navigateTo('reports')" class="text-xs font-bold text-[#38BDF8] hover:underline cursor-pointer">Full Report &rarr;</button>
+              </div>
+              <p class="text-[11px] text-[#94A3B8]" id="dash-weekly-source">Real ESP32 Records (Last 7 Days)</p>
+              <div class="grid grid-cols-2 gap-2.5 text-xs">
+                <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-3">
+                  <span class="text-[10px] text-[#94A3B8] block">Avg Heart Rate</span>
+                  <span id="dash-wk-hr" class="text-lg font-extrabold font-mono text-[#F8FAFC]">--</span>
+                </div>
+                <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-3">
+                  <span class="text-[10px] text-[#94A3B8] block">Avg SpO₂</span>
+                  <span id="dash-wk-spo2" class="text-lg font-extrabold font-mono text-[#00D6A0]">--</span>
+                </div>
+                <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-3">
+                  <span class="text-[10px] text-[#94A3B8] block">Dose Adherence</span>
+                  <span id="dash-wk-adh" class="text-lg font-extrabold font-mono text-[#38BDF8]">--</span>
+                </div>
+                <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-3">
+                  <span class="text-[10px] text-[#94A3B8] block">Vital Alerts</span>
+                  <span id="dash-wk-alerts" class="text-lg font-extrabold font-mono text-[#F87171]">0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 2. HEALTH MONITORING PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-health" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Biometric Telemetry & Parameter Alerts</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Normal: HR 60–100 BPM | SpO₂ 90–100% | Temp 36.1–37.2°C (TMP117 & MAX30102).</p>
+            </div>
+            <button onclick="loadHealthData()" class="px-4 py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Refresh Telemetry</button>
+          </div>
+
+          <div class="bg-[#151F32] border border-[#38BDF8]/30 rounded-2xl p-4 text-xs text-[#94A3B8]">
+            <strong class="text-[#38BDF8]">Estimation Notice:</strong> Optical MAX30102 SpO₂ & heart rate values are non-clinical photoplethysmography estimates. Offline/missing sensors show <span class="font-mono font-bold text-[#F8FAFC]">--</span> and are never fabricated.
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-[#38BDF8] uppercase">Heart Rate</span>
+                <span id="health-hr-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E293B] text-[#94A3B8] border border-[#334155]">--</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="health-hr-big" class="text-4xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-sm font-semibold text-[#38BDF8]">BPM</span>
+              </div>
+              <p class="text-xs text-[#94A3B8] mt-2">Low &lt; 60 BPM &bull; High &gt; 100 BPM</p>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-[#00D6A0] uppercase">Blood Oxygen (SpO₂)</span>
+                <span id="health-spo2-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E293B] text-[#94A3B8] border border-[#334155]">--</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="health-spo2-big" class="text-4xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-sm font-semibold text-[#00D6A0]">%</span>
+              </div>
+              <p class="text-xs text-[#94A3B8] mt-2">Low warning below 90%</p>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl p-5 border border-[#1E293B] shadow-lg">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-[#F59E0B] uppercase">Body Temperature</span>
+                <span id="health-temp-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1E293B] text-[#94A3B8] border border-[#334155]">--</span>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="health-temp-big" class="text-4xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-sm font-semibold text-[#F59E0B]">°C</span>
+              </div>
+              <p class="text-xs text-[#94A3B8] mt-2">Low &lt; 36.1°C &bull; High &gt; 37.2°C</p>
+            </div>
+          </div>
+
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Multi-Parameter Trend Chart</h2>
+            <div class="h-72 w-full"><canvas id="healthTrendChart"></canvas></div>
+          </div>
+
+          <!-- Saved Abnormal Reading Alerts (LOW / HIGH) -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Abnormal Health Reading Log (LOW / HIGH Alerts)</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-[#334155] text-[#94A3B8] bg-[#1E293B]">
+                    <th class="py-3 px-3">Date & Time</th>
+                    <th class="py-3 px-3">Parameter</th>
+                    <th class="py-3 px-3">Measured</th>
+                    <th class="py-3 px-3">Direction</th>
+                    <th class="py-3 px-3">Source</th>
+                    <th class="py-3 px-3">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="health-alerts-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Recorded Readings -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Recorded Biometric Readings</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-[#334155] text-[#94A3B8] bg-[#1E293B]">
+                    <th class="py-3 px-3">Timestamp</th>
+                    <th class="py-3 px-3">Temp (°C)</th>
+                    <th class="py-3 px-3">HR (BPM)</th>
+                    <th class="py-3 px-3">SpO₂ (%)</th>
+                    <th class="py-3 px-3">Source</th>
+                    <th class="py-3 px-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="health-history-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 3. MEDICINE MANAGEMENT PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-medicines" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Medicine Schedule & Chamber Assignment</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Defaults: Morning 09:00 AM, Afternoon 12:30 PM, Night 09:00 PM. Fully editable and synced to ESP32 RTC.</p>
+            </div>
+            <button onclick="openAddMedModal()" class="px-4 py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer shadow-lg transition-all">+ Add Medicine</button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="w-7 h-7 rounded-lg bg-[#1E293B] text-[#00D6A0] font-bold text-xs flex items-center justify-center border border-[#00D6A0]/40">C1</span>
+                  <span class="text-[10px] font-mono text-[#38BDF8] bg-[#1E293B] px-2 py-0.5 rounded border border-[#334155]">GPIO 32</span>
+                </div>
+                <h3 class="text-base font-extrabold text-[#F8FAFC]" id="med-card-1-name">--</h3>
+                <p class="text-xs font-semibold text-[#00D6A0] mt-0.5" id="med-card-1-dose">--</p>
+                <p class="text-xs text-[#94A3B8] italic mt-1" id="med-card-1-inst">--</p>
+                <div class="mt-3"><span class="text-xs font-mono font-bold text-[#F8FAFC] bg-[#1E293B] border border-[#334155] px-2.5 py-1 rounded-lg inline-block" id="med-card-1-time">--</span></div>
+              </div>
+              <div class="pt-3 border-t border-[#1E293B] flex justify-between text-xs font-semibold">
+                <button onclick="editCompartmentMed(1)" class="text-[#38BDF8] hover:underline cursor-pointer">Edit Schedule</button>
+                <span id="med-card-1-status" class="text-[#00D6A0]">Active</span>
+              </div>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="w-7 h-7 rounded-lg bg-[#1E293B] text-[#38BDF8] font-bold text-xs flex items-center justify-center border border-[#38BDF8]/40">C2</span>
+                  <span class="text-[10px] font-mono text-[#38BDF8] bg-[#1E293B] px-2 py-0.5 rounded border border-[#334155]">GPIO 26</span>
+                </div>
+                <h3 class="text-base font-extrabold text-[#F8FAFC]" id="med-card-2-name">--</h3>
+                <p class="text-xs font-semibold text-[#38BDF8] mt-0.5" id="med-card-2-dose">--</p>
+                <p class="text-xs text-[#94A3B8] italic mt-1" id="med-card-2-inst">--</p>
+                <div class="mt-3"><span class="text-xs font-mono font-bold text-[#F8FAFC] bg-[#1E293B] border border-[#334155] px-2.5 py-1 rounded-lg inline-block" id="med-card-2-time">--</span></div>
+              </div>
+              <div class="pt-3 border-t border-[#1E293B] flex justify-between text-xs font-semibold">
+                <button onclick="editCompartmentMed(2)" class="text-[#38BDF8] hover:underline cursor-pointer">Edit Schedule</button>
+                <span id="med-card-2-status" class="text-[#00D6A0]">Active</span>
+              </div>
+            </div>
+
+            <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg flex flex-col justify-between space-y-4">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="w-7 h-7 rounded-lg bg-[#1E293B] text-[#F59E0B] font-bold text-xs flex items-center justify-center border border-[#F59E0B]/40">C3</span>
+                  <span class="text-[10px] font-mono text-[#38BDF8] bg-[#1E293B] px-2 py-0.5 rounded border border-[#334155]">GPIO 27</span>
+                </div>
+                <h3 class="text-base font-extrabold text-[#F8FAFC]" id="med-card-3-name">--</h3>
+                <p class="text-xs font-semibold text-[#F59E0B] mt-0.5" id="med-card-3-dose">--</p>
+                <p class="text-xs text-[#94A3B8] italic mt-1" id="med-card-3-inst">--</p>
+                <div class="mt-3"><span class="text-xs font-mono font-bold text-[#F8FAFC] bg-[#1E293B] border border-[#334155] px-2.5 py-1 rounded-lg inline-block" id="med-card-3-time">--</span></div>
+              </div>
+              <div class="pt-3 border-t border-[#1E293B] flex justify-between text-xs font-semibold">
+                <button onclick="editCompartmentMed(3)" class="text-[#38BDF8] hover:underline cursor-pointer">Edit Schedule</button>
+                <span id="med-card-3-status" class="text-[#00D6A0]">Active</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Configured Medicine Schedules</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-[#334155] text-[#94A3B8] bg-[#1E293B]">
+                    <th class="py-3 px-3">Medicine Name</th>
+                    <th class="py-3 px-3">Dosage</th>
+                    <th class="py-3 px-3">Instructions</th>
+                    <th class="py-3 px-3">Chamber</th>
+                    <th class="py-3 px-3">Time</th>
+                    <th class="py-3 px-3">Status</th>
+                    <th class="py-3 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="medicines-table-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 4. MEDICINE CHAMBER CONTROL PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-chambers" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Medicine Chamber Control</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Independent manual control for Chambers 1 (GPIO 32), 2 (GPIO 26), and 3 (GPIO 27) separated from automatic schedules.</p>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <button onclick="triggerEmergencyStop()" class="px-4 py-2 bg-[#F87171] hover:bg-[#ef4444] text-white rounded-xl text-xs font-extrabold cursor-pointer shadow-lg transition-all">
+                EMERGENCY STOP ALL SERVOS
+              </button>
+              <button onclick="loadChambersData()" class="px-3.5 py-2 bg-[#1E293B] hover:bg-[#334155] text-[#F8FAFC] rounded-xl text-xs font-bold border border-[#334155] cursor-pointer transition-all">Refresh</button>
+            </div>
+          </div>
+
+          <div id="chambers-mode-banner" class="bg-[#151F32] border border-[#38BDF8]/30 text-[#F8FAFC] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div>
+              <strong class="text-[#00D6A0] block">Hardware Dispatch Mode: <span id="chambers-exec-mode" class="text-[#F8FAFC]">--</span></strong>
+              <span class="text-[#94A3B8]">Manual OPEN requires confirmation and prevents conflicting/duplicate commands. Angles: <strong id="chambers-angles-label" class="font-mono text-[#38BDF8]">Open 90° / Close 0°</strong></span>
+            </div>
+            <div class="flex items-center gap-2">
+              <input type="number" id="quick-close-angle" min="0" max="180" value="0" class="w-16 px-2 py-1 rounded-lg bg-[#1E293B] border border-[#334155] text-[#F8FAFC] font-mono text-center" title="Close Angle">
+              <input type="number" id="quick-open-angle" min="0" max="180" value="90" class="w-16 px-2 py-1 rounded-lg bg-[#1E293B] border border-[#334155] text-[#F8FAFC] font-mono text-center" title="Open Angle">
+              <button onclick="saveQuickServoAngles()" class="px-3 py-1.5 rounded-lg bg-[#38BDF8] text-[#0B1220] font-bold hover:bg-[#00D6A0] cursor-pointer transition-all">Save Angles</button>
+            </div>
+          </div>
+
+          <!-- 3 Independent Chamber Cards -->
+          <div id="chambers-cards-grid" class="grid grid-cols-1 md:grid-cols-3 gap-5"></div>
+
+          <!-- Chamber Operation Log Table -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Chamber Operation & Confirmation Log</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-[#334155] text-[#94A3B8] bg-[#1E293B]">
+                    <th class="py-3 px-3">Timestamp</th>
+                    <th class="py-3 px-3">Chamber / GPIO</th>
+                    <th class="py-3 px-3">Action</th>
+                    <th class="py-3 px-3">Mode</th>
+                    <th class="py-3 px-3">Status</th>
+                    <th class="py-3 px-3">Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="chambers-ops-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 5. MEDICINE INVENTORY & ULTRASONIC DETECTION PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-inventory" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Ultrasonic Presence & Inventory Check</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">HC-SR04 Ultrasonic Object Detection (Default threshold: &le; 5.0 cm).</p>
+            </div>
+            <button onclick="loadInventoryData()" class="px-4 py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Refresh Sensor</button>
+          </div>
+
+          <!-- Primary Ultrasonic Readout Banner -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div class="space-y-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold uppercase text-[#38BDF8]">HC-SR04 Ultrasonic Status</span>
+                <span id="inv-us-badge" class="px-3 py-0.5 rounded-full text-xs font-extrabold bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40">SENSOR ERROR</span>
+              </div>
+              <div class="flex items-baseline gap-3">
+                <span id="inv-us-distance" class="text-4xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span class="text-sm font-bold text-[#38BDF8]">cm</span>
+              </div>
+              <p id="inv-us-note" class="text-xs text-[#94A3B8]">Objects &le; threshold show "Object detected"; invalid/unavailable readings show "SENSOR ERROR". Exact tablet counting is not claimed.</p>
+            </div>
+
+            <div class="bg-[#1E293B] border border-[#334155] rounded-xl p-4 space-y-2 text-xs min-w-[230px]">
+              <label class="font-bold text-[#F8FAFC] block">Detection Threshold (cm)</label>
+              <div class="flex gap-2">
+                <input type="number" step="0.5" min="1" max="100" id="inv-us-thresh-input" value="5.0" class="w-full px-3 py-1.5 bg-[#151F32] border border-[#334155] text-[#F8FAFC] rounded-lg font-mono font-bold">
+                <button onclick="saveUltrasonicThreshold()" class="px-3 py-1.5 bg-[#00D6A0] text-[#0B1220] rounded-lg font-bold hover:bg-[#00b887] cursor-pointer transition-all">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="inventory-cards-container"></div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 6. REMINDER HISTORY PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-history" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Dispensing & Snooze History Log</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Audit trail of dose triggers, 5-minute snooze attempts, acknowledgements, and missed alerts.</p>
+            </div>
+            <select id="history-source-filter" onchange="loadHistoryData()" class="px-3 py-2 border border-[#334155] bg-[#151F32] rounded-xl text-xs font-bold text-[#F8FAFC]">
+              <option value="all">All Records (Real + Demo)</option>
+              <option value="0">Real ESP32 Only</option>
+              <option value="1">Demo Mode Only</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B] shadow-lg">
+              <span class="text-xs font-bold text-[#38BDF8] uppercase block mb-1">Adherence Rate</span>
+              <span id="hist-adherence-pct" class="text-3xl font-extrabold font-mono text-[#00D6A0]">--</span>
+            </div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B] shadow-lg">
+              <span class="text-xs font-bold text-[#38BDF8] uppercase block mb-1">Total Logs</span>
+              <span id="hist-total-count" class="text-3xl font-extrabold font-mono text-[#F8FAFC]">0</span>
+            </div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B] shadow-lg">
+              <span class="text-xs font-bold text-[#00D6A0] uppercase block mb-1">Acknowledged</span>
+              <span id="hist-retrieved-count" class="text-3xl font-extrabold font-mono text-[#00D6A0]">0</span>
+            </div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B] shadow-lg">
+              <span class="text-xs font-bold text-[#F87171] uppercase block mb-1">Missed</span>
+              <span id="hist-missed-count" class="text-3xl font-extrabold font-mono text-[#F87171]">0</span>
+            </div>
+          </div>
+
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="border-b border-[#334155] text-[#94A3B8] bg-[#1E293B]">
+                    <th class="py-3 px-3">Date & Time</th>
+                    <th class="py-3 px-3">Medicine</th>
+                    <th class="py-3 px-3">Chamber</th>
+                    <th class="py-3 px-3">Result</th>
+                    <th class="py-3 px-3">Attempt / Snooze</th>
+                    <th class="py-3 px-3">Source / Method</th>
+                  </tr>
+                </thead>
+                <tbody id="dispensing-history-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 7. WEEKLY REPORTS PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-reports" class="page-view hidden space-y-6">
+          <!-- Print-only formal PDF header -->
+          <div class="print-only-header hidden border-b-2 border-[#1E293B] pb-4 mb-4">
+            <h1 class="text-2xl font-extrabold text-[#0B1220]">SmartMed Clinical Weekly Health & Medication Report</h1>
+            <p class="text-xs text-[#64748B]" id="report-print-meta">Patient: -- | Period: -- | Generated: --</p>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 no-print">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">Weekly Health & Medication Reports</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Calculated strictly from stored SQLite records with previous-week comparison and PDF export.</p>
+            </div>
+            <button onclick="downloadWeeklyReportPdf()" class="px-4 py-2.5 bg-gradient-to-r from-[#00D6A0] to-[#38BDF8] text-[#0B1220] rounded-xl text-xs font-extrabold cursor-pointer shadow-lg hover:opacity-95 transition-all">
+              Download PDF Report
+            </button>
+          </div>
+
+          <!-- Date Range & Data Source Filter Bar -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-4 shadow-lg flex flex-wrap items-end gap-4 text-xs no-print">
+            <div>
+              <label class="font-bold text-[#F8FAFC] block mb-1">Start Date</label>
+              <input type="date" id="rep-start-date" class="px-3 py-1.5 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono">
+            </div>
+            <div>
+              <label class="font-bold text-[#F8FAFC] block mb-1">End Date</label>
+              <input type="date" id="rep-end-date" class="px-3 py-1.5 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono">
+            </div>
+            <label class="flex items-center gap-2 font-bold text-[#94A3B8] pb-1.5 cursor-pointer">
+              <input type="checkbox" id="rep-include-demo" onchange="loadWeeklyReport()" class="accent-[#00D6A0] w-4 h-4">
+              Include Demo Mode Data
+            </label>
+            <button onclick="loadWeeklyReport()" class="px-4 py-2 bg-[#00D6A0] text-[#0B1220] rounded-xl font-bold cursor-pointer hover:bg-[#00b887] transition-all">Apply Filter</button>
+            <div class="ml-auto text-right">
+              <span id="rep-provenance-label" class="text-[11px] font-mono text-[#38BDF8] block">--</span>
+            </div>
+          </div>
+
+          <!-- Insufficient Data Notice -->
+          <div id="rep-insufficient-banner" class="hidden bg-[#151F32] border border-[#F87171]/50 rounded-2xl p-5 text-xs text-[#F8FAFC]">
+            <strong class="text-[#F87171] text-sm block mb-1">Insufficient Real Hardware Data for Selected Period</strong>
+            No real ESP32 telemetry or dose records were found in this date range. SmartMed never fabricates missing averages. Connect your ESP32 or toggle <em>"Include Demo Mode Data"</em> to inspect sample telemetry.
+          </div>
+
+          <!-- 1. Health Summary Cards & Comparison -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">1. Weekly Health Report Summary</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]">
+                <span class="text-[#38BDF8] font-bold block">Avg HR</span>
+                <span id="rep-avg-hr" class="text-xl font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span id="rep-delta-hr" class="text-[10px] block text-[#94A3B8]">Prev: --</span>
+              </div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]">
+                <span class="text-[#38BDF8] font-bold block">Min / Max HR</span>
+                <span id="rep-minmax-hr" class="text-lg font-extrabold font-mono text-[#F8FAFC]">--</span>
+              </div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]">
+                <span class="text-[#00D6A0] font-bold block">Avg / Min SpO₂</span>
+                <span id="rep-spo2-stats" class="text-lg font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span id="rep-delta-spo2" class="text-[10px] block text-[#94A3B8]">Prev: --</span>
+              </div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]">
+                <span class="text-[#F59E0B] font-bold block">Avg Temp / Δ</span>
+                <span id="rep-temp-stats" class="text-lg font-extrabold font-mono text-[#F8FAFC]">--</span>
+                <span id="rep-temp-var" class="text-[10px] block text-[#94A3B8]">Var: --</span>
+              </div>
+              <div class="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/40">
+                <span class="text-[#F87171] font-bold block">LOW Alerts</span>
+                <span id="rep-low-alerts" class="text-xl font-extrabold font-mono text-[#F87171]">0</span>
+              </div>
+              <div class="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/40">
+                <span class="text-[#F87171] font-bold block">HIGH Alerts</span>
+                <span id="rep-high-alerts" class="text-xl font-extrabold font-mono text-[#F87171]">0</span>
+              </div>
+            </div>
+            <div class="h-60 w-full"><canvas id="weeklyHealthChart"></canvas></div>
+          </div>
+
+          <!-- 2. Medicine Report & Adherence -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">2. Weekly Medicine Adherence & Snooze Report</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]"><span class="text-[#00D6A0] font-bold block">Adherence Rate</span><span id="rep-adh-pct" class="text-xl font-extrabold font-mono text-[#00D6A0]">--</span><span id="rep-delta-adh" class="text-[10px] block text-[#94A3B8]">Prev: --</span></div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]"><span class="text-[#38BDF8] font-bold block">Triggered</span><span id="rep-med-sched" class="text-xl font-extrabold font-mono text-[#F8FAFC]">0</span></div>
+              <div class="p-3 rounded-xl bg-[#00D6A0]/10 border border-[#00D6A0]/30"><span class="text-[#00D6A0] font-bold block">Acknowledged</span><span id="rep-med-taken" class="text-xl font-extrabold font-mono text-[#00D6A0]">0</span></div>
+              <div class="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/30"><span class="text-[#F87171] font-bold block">Missed</span><span id="rep-med-missed" class="text-xl font-extrabold font-mono text-[#F87171]">0</span></div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]"><span class="text-[#F59E0B] font-bold block">Snooze Attempts</span><span id="rep-med-snoozes" class="text-xl font-extrabold font-mono text-[#F59E0B]">0</span></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="h-56"><canvas id="weeklyAdherenceChart"></canvas></div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr class="bg-[#1E293B] text-[#94A3B8] border-b border-[#334155]">
+                      <th class="py-2 px-3">Medicine</th><th class="py-2 px-3">Chamber</th><th class="py-2 px-3">Taken</th><th class="py-2 px-3">Missed</th><th class="py-2 px-3">Snoozes</th><th class="py-2 px-3">Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rep-per-med-tbody" class="divide-y divide-[#1E293B]"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Device & Reliability Report -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">3. Weekly Device Connectivity, Errors & Servo History</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]"><span class="text-[#38BDF8] font-bold block">Ultrasonic Current</span><span id="rep-dev-us" class="font-mono font-extrabold text-[#F8FAFC]">--</span></div>
+              <div class="p-3 rounded-xl bg-[#1E293B] border border-[#334155]"><span class="text-[#00D6A0] font-bold block">Servo Ops Logged</span><span id="rep-dev-servos" class="text-xl font-extrabold font-mono text-[#00D6A0]">0</span></div>
+              <div class="p-3 rounded-xl bg-[#F87171]/10 border border-[#F87171]/30"><span class="text-[#F87171] font-bold block">Sensor Errors Logged</span><span id="rep-dev-errors" class="text-xl font-extrabold font-mono text-[#F87171]">0</span></div>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-[#1E293B] text-[#94A3B8] border-b border-[#334155]">
+                    <th class="py-2 px-3">Timestamp</th><th class="py-2 px-3">Event Type</th><th class="py-2 px-3">Details</th>
+                  </tr>
+                </thead>
+                <tbody id="rep-conn-tbody" class="divide-y divide-[#1E293B]"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 8. DEVICE MONITORING PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-device" class="page-view hidden space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">IoT Device Monitoring & LCD Mirror</h1>
+              <p class="text-xs md:text-sm text-[#94A3B8]">Live pin configuration, ESP32 heartbeat diagnostics, LCD screen preview, and actuator tests.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="triggerCommand('SYNC_RTC')" class="px-3.5 py-2 bg-[#1E293B] hover:bg-[#334155] text-[#F8FAFC] rounded-xl text-xs font-bold border border-[#334155] cursor-pointer transition-all">Sync DS3231 RTC</button>
+              <button onclick="triggerCommand('TEST_BUZZER')" class="px-3.5 py-2 bg-[#38BDF8] hover:bg-[#0284c7] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Test Buzzer</button>
+              <button onclick="triggerEmergencyStop()" class="px-3.5 py-2 bg-[#F87171] hover:bg-[#ef4444] text-white rounded-xl text-xs font-extrabold cursor-pointer transition-all">Emergency Stop</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Last Command Status -->
+            <div class="bg-[#151F32] text-[#F8FAFC] rounded-2xl p-5 shadow-lg space-y-3 border border-[#1E293B] font-mono text-xs">
+              <div class="flex justify-between">
+                <div>
+                  <span class="text-[#94A3B8] uppercase block text-[10px]">Last Dispatched Command</span>
+                  <span id="dev-last-command" class="font-bold text-[#38BDF8] text-sm">NONE</span>
+                </div>
+                <div class="text-right">
+                  <span class="text-[#94A3B8] uppercase block text-[10px]">Confirmation Status</span>
+                  <span id="dev-last-status" class="text-[#00D6A0] font-bold">IDLE</span>
+                </div>
+              </div>
+              <div class="pt-3 border-t border-[#1E293B] grid grid-cols-2 gap-2 text-[11px] text-[#94A3B8]">
+                <div>Servo 1 / 2 / 3: <strong class="text-[#F8FAFC]">GPIO 32 / 26 / 27</strong></div>
+                <div>I2C SDA / SCL: <strong class="text-[#F8FAFC]">GPIO 21 / 22</strong></div>
+                <div>Buzzer Pin: <strong id="dev-pin-buzzer" class="text-[#F8FAFC]">GPIO 4 (Cfg)</strong></div>
+                <div>Ultrasonic: <strong id="dev-pin-us" class="text-[#F8FAFC]">TRIG 5 / ECHO 17</strong></div>
+              </div>
+            </div>
+
+            <!-- Live 16x2 LCD Preview Mirror -->
+            <div class="bg-[#151F32] text-[#F8FAFC] rounded-2xl p-5 shadow-lg space-y-2 border border-[#38BDF8]/30">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-[#38BDF8]">16x2 I2C LCD Status Preview (0x27)</span>
+              <div class="bg-[#0B1220] border-2 border-[#1E293B] rounded-xl p-4 font-mono text-base sm:text-lg tracking-wider text-[#00D6A0]">
+                <div id="lcd-line-0" class="truncate">SMARTMED</div>
+                <div id="lcd-line-1" class="truncate text-[#94A3B8]">DEVICE OFFLINE</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnostics Cards -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B]"><span class="text-[#38BDF8] font-bold block">TMP117 (0x48)</span><span id="diag-tmp117" class="font-mono font-extrabold text-[#F8FAFC]">--</span></div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B]"><span class="text-[#38BDF8] font-bold block">MAX30102 (0x57)</span><span id="diag-max30102" class="font-mono font-extrabold text-[#F8FAFC]">--</span></div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B]"><span class="text-[#38BDF8] font-bold block">DS3231 RTC (0x68)</span><span id="diag-ds3231" class="font-mono font-extrabold text-[#F8FAFC]">--</span></div>
+            <div class="bg-[#151F32] rounded-2xl p-4 border border-[#1E293B]"><span class="text-[#38BDF8] font-bold block">Ultrasonic HC-SR04</span><span id="diag-us" class="font-mono font-extrabold text-[#F8FAFC]">SENSOR ERROR</span></div>
+          </div>
+
+          <!-- 3 Servo Flap Quick Sweep Tests -->
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-4">
+            <h2 class="text-base font-bold text-[#F8FAFC]">Manual Servo Sweep Test (Auto-Close After 3s)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div class="border border-[#1E293B] rounded-xl p-4 bg-[#1E293B] space-y-3">
+                <div class="flex justify-between"><span class="font-bold text-sm text-[#F8FAFC]">Servo 1 (Morning)</span><span class="font-mono text-xs bg-[#151F32] px-2 py-0.5 rounded border border-[#334155] text-[#38BDF8]">GPIO 32</span></div>
+                <button onclick="confirmServoTest(1)" class="w-full py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Test Sweep Chamber 1</button>
+              </div>
+              <div class="border border-[#1E293B] rounded-xl p-4 bg-[#1E293B] space-y-3">
+                <div class="flex justify-between"><span class="font-bold text-sm text-[#F8FAFC]">Servo 2 (Afternoon)</span><span class="font-mono text-xs bg-[#151F32] px-2 py-0.5 rounded border border-[#334155] text-[#38BDF8]">GPIO 26</span></div>
+                <button onclick="confirmServoTest(2)" class="w-full py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Test Sweep Chamber 2</button>
+              </div>
+              <div class="border border-[#1E293B] rounded-xl p-4 bg-[#1E293B] space-y-3">
+                <div class="flex justify-between"><span class="font-bold text-sm text-[#F8FAFC]">Servo 3 (Night)</span><span class="font-mono text-xs bg-[#151F32] px-2 py-0.5 rounded border border-[#334155] text-[#38BDF8]">GPIO 27</span></div>
+                <button onclick="confirmServoTest(3)" class="w-full py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl text-xs font-bold cursor-pointer transition-all">Test Sweep Chamber 3</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- 9. SETTINGS PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-settings" class="page-view hidden space-y-6">
+          <div>
+            <h1 class="text-2xl font-extrabold text-[#F8FAFC] tracking-tight">System, Clinical & Hardware Settings</h1>
+            <p class="text-xs md:text-sm text-[#94A3B8]">All changes persist in SQLite and automatically sync to the ESP32 firmware.</p>
+          </div>
+
+          <form onsubmit="saveSettingsForm(event)" class="space-y-6 bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg text-xs">
+            <h2 class="text-base font-bold text-[#F8FAFC] pb-2 border-b border-[#1E293B]">Patient Profile</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Patient Full Name</label><input type="text" id="set-patient-name" required class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Patient Age</label><input type="number" id="set-patient-age" required class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Physician</label><input type="text" id="set-doctor-name" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Emergency Contact</label><input type="text" id="set-emergency-contact" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl"></div>
+            </div>
+
+            <h2 class="text-base font-bold text-[#F8FAFC] pt-2 pb-2 border-b border-[#1E293B]">Clinical Alert Thresholds</h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">HR Min (BPM)</label><input type="number" id="set-hr-low" value="60" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">HR Max (BPM)</label><input type="number" id="set-hr-high" value="100" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">SpO₂ Min (%)</label><input type="number" id="set-spo2-thresh" value="90" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Temp Min (°C)</label><input type="number" step="0.1" id="set-temp-low" value="36.1" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Temp Max (°C)</label><input type="number" step="0.1" id="set-fever-thresh" value="37.2" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+            </div>
+
+            <h2 class="text-base font-bold text-[#F8FAFC] pt-2 pb-2 border-b border-[#1E293B]">Snooze, Ultrasonic, Servo Angles & Pins</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Snooze Timer (Seconds)</label><input type="number" id="set-timeout-sec" value="300" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Ultrasonic Threshold (cm)</label><input type="number" step="0.5" id="set-us-thresh" value="5.0" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Servo Open Angle (°)</label><input type="number" min="0" max="180" id="set-servo-open" value="90" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Servo Close Angle (°)</label><input type="number" min="0" max="180" id="set-servo-close" value="0" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Buzzer Pin (Cfg)</label><input type="number" id="set-buzzer-pin" value="4" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Ultrasonic TRIG Pin</label><input type="number" id="set-us-trig" value="5" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">Ultrasonic ECHO Pin</label><input type="number" id="set-us-echo" value="17" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+              <div><label class="font-bold block mb-1 text-[#94A3B8]">ESP32 Endpoint</label><input type="text" id="set-esp-endpoint" value="http://192.168.1.120" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono"></div>
+            </div>
+
+            <div class="flex justify-end pt-4 border-t border-[#1E293B]">
+              <button type="submit" class="px-6 py-2.5 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl font-bold cursor-pointer shadow-lg transition-all">
+                Save All Settings
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- ABOUT PROJECT PAGE -->
+        <!-- ============================================================= -->
+        <section id="page-about" class="page-view hidden space-y-6 max-w-4xl">
+          <h1 class="text-2xl font-extrabold text-[#F8FAFC]">About SmartMed IoT Platform</h1>
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-3 text-xs leading-relaxed">
+            <h2 class="text-base font-bold text-[#38BDF8]">Verified Pin Map & System Architecture</h2>
+            <ul class="list-disc pl-5 space-y-1 text-[#94A3B8]">
+              <li><strong>Servos 1–3:</strong> <span class="text-[#F8FAFC]">GPIO 32</span> (Morning), <span class="text-[#F8FAFC]">GPIO 26</span> (Afternoon), <span class="text-[#F8FAFC]">GPIO 27</span> (Night)</li>
+              <li><strong>I2C Shared Bus:</strong> <span class="text-[#F8FAFC]">SDA GPIO 21</span>, <span class="text-[#F8FAFC]">SCL GPIO 22</span> (TMP117 0x48, MAX30102 0x57, DS3231 RTC 0x68, LCD 0x27)</li>
+              <li><strong>Configurable GPIOs:</strong> Buzzer (default GPIO 4), Ultrasonic HC-SR04 (TRIG 5 / ECHO 17), Acknowledge Button (GPIO 16)</li>
+            </ul>
+          </div>
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-6 shadow-lg space-y-3 text-xs">
+            <h2 class="text-base font-bold text-[#F87171]">Safety & Biomedical Ethics</h2>
+            <p class="text-[#94A3B8]">Ultrasonic sensing validates physical object presence (&le; 5 cm default) without claiming exact tablet counts or swallowing confirmation. Optical SpO₂ & pulse values are engineering estimates.</p>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION DRAWER -->
+  <div id="notif-drawer" class="hidden fixed inset-0 z-50 bg-[#0B1220]/75 backdrop-blur-xs flex justify-end">
+    <div class="w-full max-w-md bg-[#151F32] h-full shadow-2xl flex flex-col justify-between border-l border-[#1E293B]">
+      <div class="px-5 py-4 border-b border-[#1E293B] flex items-center justify-between bg-[#1E293B] text-[#F8FAFC]">
+        <h3 class="font-bold text-sm text-[#F8FAFC]">System Notifications & Alerts</h3>
+        <button onclick="toggleNotifications()" class="p-1 text-[#94A3B8] hover:text-[#F8FAFC] cursor-pointer text-lg">&times;</button>
+      </div>
+      <div id="notif-list-container" class="flex-1 overflow-y-auto p-4 space-y-3 text-xs"></div>
+      <div class="p-3 bg-[#1E293B] border-t border-[#334155] text-center">
+        <button onclick="clearNotifications()" class="text-xs text-[#38BDF8] font-bold hover:underline cursor-pointer">Mark all as read</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRMATION MODAL FOR MANUAL CHAMBER OPENING -->
+  <div id="chamber-confirm-modal" class="hidden fixed inset-0 z-50 bg-[#0B1220]/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#151F32] rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-[#1E293B] text-xs space-y-4">
+      <h3 class="font-extrabold text-base text-[#F8FAFC]">Confirm Manual Chamber Opening</h3>
+      <p id="chamber-confirm-text" class="text-[#94A3B8] leading-relaxed">Are you sure you want to open this chamber?</p>
+      <div class="flex justify-end gap-2 pt-2 border-t border-[#1E293B]">
+        <button onclick="closeChamberConfirm(false)" class="px-4 py-2 rounded-xl border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] font-bold cursor-pointer">Cancel</button>
+        <button onclick="closeChamberConfirm(true)" class="px-4 py-2 rounded-xl bg-[#00D6A0] text-[#0B1220] font-bold cursor-pointer hover:bg-[#00b887]">Confirm OPEN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADD / EDIT PRESCRIPTION -->
+  <div id="med-modal" class="hidden fixed inset-0 z-50 bg-[#0B1220]/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-[#151F32] rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#1E293B] text-xs">
+      <div class="flex justify-between items-center pb-3 border-b border-[#1E293B]">
+        <h3 id="med-modal-title" class="font-extrabold text-[#F8FAFC] text-base">Configure Medicine Schedule</h3>
+        <button onclick="closeMedModal()" class="text-[#94A3B8] hover:text-[#F8FAFC] text-lg cursor-pointer">&times;</button>
+      </div>
+      <form onsubmit="submitMedForm(event)" class="mt-4 space-y-3">
+        <input type="hidden" id="modal-med-id" value="">
+        <div>
+          <label class="block font-bold mb-1 text-[#94A3B8]">Medicine Name *</label>
+          <input type="text" id="modal-med-name" required class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl">
+        </div>
+        <div>
+          <label class="block font-bold mb-1 text-[#94A3B8]">Dosage *</label>
+          <input type="text" id="modal-med-dose" required class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl">
+        </div>
+        <div>
+          <label class="block font-bold mb-1 text-[#94A3B8]">Instructions</label>
+          <input type="text" id="modal-med-inst" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-bold mb-1 text-[#94A3B8]">Assigned Chamber *</label>
+            <select id="modal-med-comp" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-bold">
+              <option value="1">Chamber 1 (Morning - GPIO 32)</option>
+              <option value="2">Chamber 2 (Afternoon - GPIO 26)</option>
+              <option value="3">Chamber 3 (Night - GPIO 27)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block font-bold mb-1 text-[#94A3B8]">Scheduled Time *</label>
+            <input type="time" id="modal-med-time" required value="09:00" class="w-full px-3 py-2 bg-[#1E293B] border border-[#334155] text-[#F8FAFC] rounded-xl font-mono font-bold">
+          </div>
+        </div>
+        <label class="flex items-center gap-2 font-bold text-[#94A3B8] pt-1">
+          <input type="checkbox" id="modal-med-active" checked class="accent-[#00D6A0] w-4 h-4">
+          Schedule Active
+        </label>
+        <div class="flex justify-end gap-2 pt-3 border-t border-[#1E293B]">
+          <button type="button" onclick="closeMedModal()" class="px-4 py-2 border border-[#334155] text-[#94A3B8] hover:text-[#F8FAFC] rounded-xl font-semibold cursor-pointer">Cancel</button>
+          <button type="submit" class="px-5 py-2 bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] rounded-xl font-bold cursor-pointer">Save Schedule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentNavPage = 'dashboard';
+    let isDemoModeActive = false;
+    let esp32Online = false;
+    let ws = null;
+    let dashChart = null;
+    let healthChart = null;
+    let weeklyHealthChart = null;
+    let weeklyAdherenceChart = null;
+    let cachedMedicines = [];
+    let cachedSettings = {};
+    let pendingChamberOpenId = null;
+
+    function toggleMobileSidebar(open) {
+      const side = document.getElementById('app-sidebar');
+      const back = document.getElementById('sidebar-backdrop');
+      if (open) {
+        side.classList.remove('-translate-x-full');
+        back.classList.remove('hidden');
+      } else {
+        side.classList.add('-translate-x-full');
+        back.classList.add('hidden');
+      }
+    }
+
+    function navigateTo(pageId) {
+      document.querySelectorAll('.page-view').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('bg-[#1E293B]', 'text-[#F8FAFC]', 'border-l-4', 'border-[#00D6A0]', 'shadow-sm');
+        btn.classList.add('text-[#94A3B8]');
+      });
+
+      const targetPage = document.getElementById('page-' + pageId);
+      const targetNav = document.getElementById('nav-' + pageId);
+      if (targetPage) targetPage.classList.remove('hidden');
+      if (targetNav) {
+        targetNav.classList.remove('text-[#94A3B8]');
+        targetNav.classList.add('bg-[#1E293B]', 'text-[#F8FAFC]', 'border-l-4', 'border-[#00D6A0]', 'shadow-sm');
+      }
+      currentNavPage = pageId;
+      toggleMobileSidebar(false);
+
+      if (pageId === 'chambers') loadChambersData();
+      if (pageId === 'reports') loadWeeklyReport();
+      if (pageId === 'device') loadDeviceStatus();
+      if (pageId === 'inventory') loadInventoryData();
+      if (pageId === 'history') loadHistoryData();
+      if (pageId === 'health') {
+        loadHealthData();
+        if (healthChart) setTimeout(() => healthChart.update(), 80);
+      }
+    }
+
+    function toggleNotifications() {
+      document.getElementById('notif-drawer').classList.toggle('hidden');
+      loadNotifications();
+    }
+
+    function levelBadgeClass(level) {
+      if (level === 'LOW' || level === 'HIGH') return 'bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40';
+      if (level === 'NORMAL') return 'bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40';
+      return 'bg-[#1E293B] text-[#94A3B8] border border-[#334155]';
+    }
+
+    function chamberStatusClass(st) {
+      if (st === 'OPEN') return 'bg-[#00D6A0] text-[#0B1220] font-bold';
+      if (st === 'MOVING') return 'bg-[#F59E0B] text-[#0B1220] font-bold animate-pulse';
+      if (st === 'ERROR') return 'bg-[#F87171] text-white font-bold';
+      return 'bg-[#1E293B] text-[#94A3B8] border border-[#334155]';
+    }
+
+    function updateConnectionUI(device) {
+      if (!device) return;
+      isDemoModeActive = !!device.is_demo_mode;
+      esp32Online = !!device.esp32_online;
+
+      const label = document.getElementById('demo-mode-label');
+      const btn = document.getElementById('btn-demo-mode');
+      const sideBadge = document.getElementById('sidebar-mode-badge');
+      const sideDesc = document.getElementById('sidebar-conn-desc');
+      const heroBadge = document.getElementById('hero-conn-badge');
+      const wifiPill = document.getElementById('wifi-badge');
+      const wifiText = document.getElementById('wifi-ip-text');
+      const dashConnPill = document.getElementById('dash-esp-conn-pill');
+      const demoTrig = document.getElementById('btn-demo-trigger');
+
+      if (isDemoModeActive) {
+        if (label) label.textContent = 'Demo Mode (Simulated)';
+        btn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer bg-gradient-to-r from-[#1E293B] to-[#151F32] text-[#38BDF8] border-[#38BDF8]';
+        sideBadge.className = 'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40';
+        sideBadge.textContent = 'DEMO SIM';
+        sideDesc.textContent = 'Simulated data shown. Separated from real ESP32 logs.';
+        heroBadge.className = 'text-xs font-bold uppercase px-2.5 py-0.5 rounded-full bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40';
+        heroBadge.textContent = 'DEMO MODE (Simulated)';
+        wifiPill.className = 'hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#38BDF8]/10 border-[#38BDF8]/40 text-[#38BDF8]';
+        wifiText.textContent = 'DEMO SIMULATION';
+        dashConnPill.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40';
+        dashConnPill.textContent = 'DEMO MODE';
+        if (demoTrig) demoTrig.classList.remove('hidden');
+      } else if (esp32Online) {
+        if (label) label.textContent = 'Live Hardware Mode';
+        btn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer bg-[#1E293B] text-[#F8FAFC] border-[#00D6A0]/50';
+        sideBadge.className = 'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40';
+        sideBadge.textContent = 'ESP32 LIVE';
+        sideDesc.textContent = `Connected (${device.ip_address || 'LAN'})`;
+        heroBadge.className = 'text-xs font-bold uppercase px-2.5 py-0.5 rounded-full bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/50';
+        heroBadge.textContent = 'LIVE ESP32 CONNECTED';
+        wifiPill.className = 'hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#00D6A0]/10 border-[#00D6A0]/40 text-[#00D6A0]';
+        wifiText.textContent = `ESP32 ONLINE (${device.ip_address || ''})`;
+        dashConnPill.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40';
+        dashConnPill.textContent = 'ONLINE';
+        if (demoTrig) demoTrig.classList.add('hidden');
+      } else {
+        if (label) label.textContent = 'Live Hardware Mode';
+        btn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer bg-[#1E293B] text-[#94A3B8] border-[#334155] hover:border-[#38BDF8]';
+        sideBadge.className = 'text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40';
+        sideBadge.textContent = 'OFFLINE';
+        sideDesc.textContent = 'No ESP32 telemetry heartbeat received.';
+        heroBadge.className = 'text-xs font-bold uppercase px-2.5 py-0.5 rounded-full bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40';
+        heroBadge.textContent = 'ESP32 OFFLINE';
+        wifiPill.className = 'hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-[#F87171]/10 border-[#F87171]/40 text-[#F87171]';
+        wifiText.textContent = 'ESP32 OFFLINE';
+        dashConnPill.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40';
+        dashConnPill.textContent = 'OFFLINE';
+        if (demoTrig) demoTrig.classList.add('hidden');
+      }
+
+      document.getElementById('estop-banner').classList.toggle('hidden', !device.emergency_stopped);
+
+      // Update chamber pills on dashboard
+      [1, 2, 3].forEach(c => {
+        const el = document.getElementById(`dash-servo${c}-state`);
+        const st = device[`servo${c}_state`] || 'CLOSED';
+        if (el) {
+          el.textContent = st;
+          el.className = `px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] ${chamberStatusClass(st)}`;
+        }
+      });
+
+      // Update ultrasonic summary pill on dashboard
+      const dashUs = document.getElementById('dash-ultrasonic-mini');
+      if (dashUs) {
+        dashUs.textContent = `Ultrasonic: ${device.ultrasonic_status || 'SENSOR ERROR'}`;
+      }
+    }
+
+    async function toggleDemoMode() {
+      const res = await fetch('/api/mode/toggle', { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) return alert(data.error);
+      await Promise.all([loadHealthData(), loadRemindersData(), loadChambersData(), loadDeviceStatus(), loadWeeklyReport()]);
+    }
+
+    async function loadHealthData() {
+      try {
+        const devRes = await fetch('/api/device/status');
+        const devJson = await devRes.json();
+        const dev = devJson.data;
+        updateConnectionUI(dev);
+
+        const histRes = await fetch('/api/health/history?limit=25');
+        const histJson = await histRes.json();
+        const rows = histJson.data || [];
+        const latest = rows[rows.length - 1];
+
+        const hrVal = document.getElementById('dash-hr-val');
+        const hrLevel = document.getElementById('dash-hr-level');
+        const spo2Val = document.getElementById('dash-spo2-val');
+        const spo2Level = document.getElementById('dash-spo2-level');
+        const tempVal = document.getElementById('dash-temp-val');
+        const tempFVal = document.getElementById('dash-temp-f-val');
+        const tempLevel = document.getElementById('dash-temp-level');
+        const statusVal = document.getElementById('dash-status-val');
+
+        if (latest) {
+          hrVal.textContent = latest.heart_rate != null ? Math.round(latest.heart_rate) : '--';
+          hrLevel.textContent = latest.hr_level || 'NORMAL';
+          hrLevel.className = `px-2 py-0.5 rounded-full font-bold text-[10px] ${levelBadgeClass(latest.hr_level)}`;
+
+          spo2Val.textContent = latest.spo2 != null ? Math.round(latest.spo2) : '--';
+          spo2Level.textContent = latest.spo2_level || 'NORMAL';
+          spo2Level.className = `px-2 py-0.5 rounded-full font-bold text-[10px] ${levelBadgeClass(latest.spo2_level)}`;
+
+          tempVal.textContent = latest.temperature != null ? Number(latest.temperature).toFixed(1) : '--';
+          if (latest.temperature != null) {
+            tempFVal.textContent = `(${((latest.temperature * 9/5) + 32).toFixed(1)}°F)`;
+          } else {
+            tempFVal.textContent = '';
+          }
+          tempLevel.textContent = latest.temp_level || 'NORMAL';
+          tempLevel.className = `px-2 py-0.5 rounded-full font-bold text-[10px] ${levelBadgeClass(latest.temp_level)}`;
+
+          statusVal.textContent = latest.status || 'OK';
+
+          // Health page mirrors
+          document.getElementById('health-hr-big').textContent = hrVal.textContent;
+          document.getElementById('health-hr-badge').textContent = hrLevel.textContent;
+          document.getElementById('health-hr-badge').className = hrLevel.className;
+
+          document.getElementById('health-spo2-big').textContent = spo2Val.textContent;
+          document.getElementById('health-spo2-badge').textContent = spo2Level.textContent;
+          document.getElementById('health-spo2-badge').className = spo2Level.className;
+
+          document.getElementById('health-temp-big').textContent = tempVal.textContent;
+          document.getElementById('health-temp-badge').textContent = tempLevel.textContent;
+          document.getElementById('health-temp-badge').className = tempLevel.className;
+        } else {
+          hrVal.textContent = '--';
+          hrLevel.textContent = 'NO DATA';
+          hrLevel.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]';
+          spo2Val.textContent = '--';
+          spo2Level.textContent = 'NO DATA';
+          spo2Level.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]';
+          tempVal.textContent = '--';
+          tempFVal.textContent = '';
+          tempLevel.textContent = 'NO DATA';
+          tempLevel.className = 'px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#1E293B] text-[#94A3B8] border border-[#334155]';
+          statusVal.textContent = 'WAITING SENSORS';
+        }
+
+        // Fetch Health Alerts
+        const alertsRes = await fetch('/api/health/alerts?limit=15');
+        const alertsJson = await alertsRes.json();
+        const alerts = alertsJson.data || [];
+        const alertsTbody = document.getElementById('health-alerts-tbody');
+        alertsTbody.innerHTML = alerts.length ? alerts.map(a => `
+          <tr class="hover:bg-[#1E293B]/50 transition-colors">
+            <td class="py-2.5 px-3 font-mono text-[#38BDF8]">${a.timestamp}</td>
+            <td class="py-2.5 px-3 font-bold text-[#F8FAFC]">${a.parameter}</td>
+            <td class="py-2.5 px-3 font-mono font-bold">${a.value}</td>
+            <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${a.direction === 'HIGH' ? 'bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40' : 'bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40'}">${a.direction}</span></td>
+            <td class="py-2.5 px-3">${a.is_demo ? '<span class="text-[10px] text-[#38BDF8]">[DEMO]</span>' : '<span class="text-[10px] text-[#00D6A0]">[LIVE]</span>'}</td>
+            <td class="py-2.5 px-3 text-[#94A3B8]">${a.message}</td>
+          </tr>`).join('') : `<tr><td colspan="6" class="py-4 text-center text-[#94A3B8]">No abnormal readings recorded. Parameters within normal range.</td></tr>`;
+
+        updateCharts(rows);
+        renderHealthTable(rows);
+      } catch (e) { console.warn(e); }
+    }
+
+    function initCharts() {
+      const darkGrid = { color: 'rgba(148, 163, 184, 0.08)' };
+      const darkTicks = { color: '#94A3B8', font: { family: 'JetBrains Mono', size: 10 } };
+
+      const ctx1 = document.getElementById('dashboardChart').getContext('2d');
+      dashChart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Heart Rate (BPM)', data: [], borderColor: '#38BDF8', backgroundColor: 'rgba(56, 189, 248, 0.12)', borderWidth: 2.5, tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#38BDF8' },
+            { label: 'SpO₂ (%)', data: [], borderColor: '#00D6A0', backgroundColor: 'rgba(0, 214, 160, 0.12)', borderWidth: 2.5, tension: 0.35, fill: true, pointRadius: 3, pointBackgroundColor: '#00D6A0' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#F8FAFC', font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' } } }
+          },
+          scales: {
+            y: { min: 40, max: 130, grid: darkGrid, ticks: darkTicks },
+            x: { grid: darkGrid, ticks: darkTicks }
+          }
+        }
+      });
+
+      const ctx2 = document.getElementById('healthTrendChart').getContext('2d');
+      healthChart = new Chart(ctx2, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            { label: 'Heart Rate (BPM)', data: [], borderColor: '#38BDF8', tension: 0.35, borderWidth: 2.5, pointRadius: 3 },
+            { label: 'SpO₂ (%)', data: [], borderColor: '#00D6A0', tension: 0.35, borderWidth: 2.5, pointRadius: 3 },
+            { label: 'Temp (°C)', data: [], borderColor: '#F59E0B', tension: 0.35, borderWidth: 2, pointRadius: 3 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#F8FAFC', font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' } } }
+          },
+          scales: {
+            y: { grid: darkGrid, ticks: darkTicks },
+            x: { grid: darkGrid, ticks: darkTicks }
+          }
+        }
+      });
+    }
+
+    function updateCharts(history) {
+      const emptyBox = document.getElementById('dash-chart-empty');
+      const wrapBox = document.getElementById('dash-chart-wrap');
+      if (!history || !history.length) {
+        if (emptyBox) emptyBox.classList.remove('hidden');
+        if (wrapBox) wrapBox.classList.add('hidden');
+        return;
+      }
+      if (emptyBox) emptyBox.classList.add('hidden');
+      if (wrapBox) wrapBox.classList.remove('hidden');
+
+      const slice = history.slice(-15);
+      const labels = slice.map(h => (h.timestamp || '').slice(11, 16) || h.timestamp);
+      const hrData = slice.map(h => h.heart_rate);
+      const spo2Data = slice.map(h => h.spo2);
+      const tempData = slice.map(h => h.temperature);
+
+      if (dashChart) {
+        dashChart.data.labels = labels;
+        dashChart.data.datasets[0].data = hrData;
+        dashChart.data.datasets[1].data = spo2Data;
+        dashChart.update();
+      }
+      if (healthChart) {
+        healthChart.data.labels = labels;
+        healthChart.data.datasets[0].data = hrData;
+        healthChart.data.datasets[1].data = spo2Data;
+        healthChart.data.datasets[2].data = tempData;
+        healthChart.update();
+      }
+    }
+
+    function renderHealthTable(history) {
+      const tbody = document.getElementById('health-history-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = history.length ? history.slice(-20).reverse().map(h => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2 px-3 font-mono text-[#38BDF8]">${h.timestamp}</td>
+          <td class="py-2 px-3 font-bold">${h.temperature != null ? Number(h.temperature).toFixed(1) : '--'}</td>
+          <td class="py-2 px-3 font-bold">${h.heart_rate != null ? Math.round(h.heart_rate) : '--'}</td>
+          <td class="py-2 px-3 font-bold">${h.spo2 != null ? Math.round(h.spo2) : '--'}</td>
+          <td class="py-2 px-3">${h.is_demo ? '<span class="text-[10px] text-[#38BDF8]">[DEMO]</span>' : '<span class="text-[10px] text-[#00D6A0]">[LIVE]</span>'}</td>
+          <td class="py-2 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${h.status === 'OK' ? 'bg-[#00D6A0]/20 text-[#00D6A0]' : 'bg-[#F87171]/20 text-[#F87171]'}">${h.status}</span></td>
+        </tr>`).join('') : `<tr><td colspan="6" class="py-4 text-center text-[#94A3B8]">No biometric records found.</td></tr>`;
+    }
+
+    // MEDICINES & SCHEDULES
+    async function loadMedicinesData() {
+      const res = await fetch('/api/medicines');
+      const json = await res.json();
+      if (!json.success) return;
+      cachedMedicines = json.data || [];
+
+      // Update 3 compartment cards
+      [1, 2, 3].forEach(c => {
+        const med = cachedMedicines.find(m => Number(m.compartment_id) === c);
+        const nameEl = document.getElementById(`med-card-${c}-name`);
+        const doseEl = document.getElementById(`med-card-${c}-dose`);
+        const instEl = document.getElementById(`med-card-${c}-inst`);
+        const timeEl = document.getElementById(`med-card-${c}-time`);
+        const statusEl = document.getElementById(`med-card-${c}-status`);
+        if (med) {
+          nameEl.textContent = med.name;
+          doseEl.textContent = med.dosage;
+          instEl.textContent = med.instructions || 'Standard dosing';
+          timeEl.textContent = `${med.schedule_period || ''} • ${med.scheduled_time}`;
+          statusEl.textContent = med.is_active ? 'Active' : 'Disabled';
+          statusEl.className = med.is_active ? 'text-[#00D6A0] font-semibold' : 'text-[#94A3B8]';
+        } else {
+          nameEl.textContent = 'Unassigned';
+          doseEl.textContent = '--';
+          instEl.textContent = 'Click Edit to assign prescription';
+          timeEl.textContent = '--:--';
+          statusEl.textContent = 'Inactive';
+          statusEl.className = 'text-[#94A3B8]';
+        }
+      });
+
+      // Table
+      const tbody = document.getElementById('medicines-table-tbody');
+      tbody.innerHTML = cachedMedicines.length ? cachedMedicines.map(m => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2.5 px-3 font-bold text-[#F8FAFC]">${m.name}</td>
+          <td class="py-2.5 px-3">${m.dosage}</td>
+          <td class="py-2.5 px-3 text-[#94A3B8]">${m.instructions || '--'}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-[#1E293B] text-[#38BDF8] border border-[#334155]">Chamber ${m.compartment_id}</span></td>
+          <td class="py-2.5 px-3 font-mono font-bold">${m.scheduled_time}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${m.is_active ? 'bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40' : 'bg-[#1E293B] text-[#94A3B8] border border-[#334155]'}">${m.is_active ? 'ACTIVE' : 'INACTIVE'}</span></td>
+          <td class="py-2.5 px-3 text-right space-x-2">
+            <button onclick="editMedById(${m.id})" class="text-[#38BDF8] hover:underline font-bold cursor-pointer">Edit</button>
+            <button onclick="toggleMedActive(${m.id}, ${m.is_active ? 0 : 1})" class="text-[#94A3B8] hover:underline cursor-pointer">${m.is_active ? 'Disable' : 'Enable'}</button>
+          </td>
+        </tr>`).join('') : `<tr><td colspan="7" class="py-4 text-center text-[#94A3B8]">No medicine schedules found.</td></tr>`;
+    }
+
+    function openAddMedModal() {
+      document.getElementById('modal-med-id').value = '';
+      document.getElementById('modal-med-name').value = '';
+      document.getElementById('modal-med-dose').value = '';
+      document.getElementById('modal-med-inst').value = '';
+      document.getElementById('modal-med-comp').value = '1';
+      document.getElementById('modal-med-time').value = '09:00';
+      document.getElementById('modal-med-active').checked = true;
+      document.getElementById('med-modal-title').textContent = 'Add Medicine Schedule';
+      document.getElementById('med-modal').classList.remove('hidden');
+    }
+
+    function editCompartmentMed(compNum) {
+      const med = cachedMedicines.find(m => Number(m.compartment_id) === compNum);
+      if (med) {
+        editMedById(med.id);
+      } else {
+        openAddMedModal();
+        document.getElementById('modal-med-comp').value = String(compNum);
+      }
+    }
+
+    function editMedById(id) {
+      const med = cachedMedicines.find(m => m.id === id);
+      if (!med) return;
+      document.getElementById('modal-med-id').value = med.id;
+      document.getElementById('modal-med-name').value = med.name;
+      document.getElementById('modal-med-dose').value = med.dosage;
+      document.getElementById('modal-med-inst').value = med.instructions || '';
+      document.getElementById('modal-med-comp').value = String(med.compartment_id);
+      document.getElementById('modal-med-time').value = med.scheduled_time;
+      document.getElementById('modal-med-active').checked = !!med.is_active;
+      document.getElementById('med-modal-title').textContent = `Edit Schedule: Chamber ${med.compartment_id}`;
+      document.getElementById('med-modal').classList.remove('hidden');
+    }
+
+    function closeMedModal() { document.getElementById('med-modal').classList.add('hidden'); }
+
+    async function submitMedForm(e) {
+      e.preventDefault();
+      const id = document.getElementById('modal-med-id').value;
+      const payload = {
+        name: document.getElementById('modal-med-name').value,
+        dosage: document.getElementById('modal-med-dose').value,
+        instructions: document.getElementById('modal-med-inst').value,
+        compartment_id: parseInt(document.getElementById('modal-med-comp').value, 10),
+        scheduled_time: document.getElementById('modal-med-time').value,
+        is_active: document.getElementById('modal-med-active').checked ? 1 : 0
+      };
+      if (id) {
+        await fetch(`/api/medicines/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        await fetch('/api/medicines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+      closeMedModal();
+      await Promise.all([loadMedicinesData(), loadRemindersData(), loadChambersData()]);
+    }
+
+    async function toggleMedActive(id, newVal) {
+      await fetch(`/api/medicines/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: newVal })
+      });
+      loadMedicinesData();
+    }
+
+    async function deleteMed(id) {
+      if (!confirm('Delete this medication schedule?')) return;
+      await fetch(`/api/medicines/${id}`, { method: 'DELETE' });
+      loadMedicinesData();
+    }
+
+    async function loadRemindersData() {
+      const res = await fetch('/api/reminders');
+      const json = await res.json();
+      if (!json.success) return;
+      const d = json.data;
+      document.getElementById('dash-count-completed').textContent = d.summary.completed;
+      document.getElementById('dash-count-pending').textContent = d.summary.pending;
+      document.getElementById('dash-count-missed').textContent = d.summary.missed;
+      if (d.next_medicine) {
+        document.getElementById('dash-next-med-name').textContent = d.next_medicine.name;
+        document.getElementById('dash-next-med-dose').textContent = `${d.next_medicine.dosage} • Chamber ${d.next_medicine.compartment_id}`;
+        document.getElementById('dash-next-med-time').textContent = d.next_medicine.scheduled_time;
+      } else {
+        document.getElementById('dash-next-med-name').textContent = 'No Active Schedule';
+        document.getElementById('dash-next-med-dose').textContent = 'Configure schedules in Medicine Management';
+        document.getElementById('dash-next-med-time').textContent = '--:--';
+      }
+    }
+
+    async function triggerDemoReminder() {
+      const res = await fetch('/api/reminders/trigger-demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval_sec: 5 })
+      });
+      const data = await res.json();
+      if (!data.success) return alert(data.error);
+      await Promise.all([loadHealthData(), loadRemindersData(), loadNotifications()]);
+    }
+
+    async function acknowledgeReminder() {
+      await fetch('/api/reminders/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      await Promise.all([loadHealthData(), loadRemindersData(), loadHistoryData(), loadChambersData()]);
+    }
+
+    // CHAMBER CONTROL SYSTEM
+    async function loadChambersData() {
+      const res = await fetch('/api/chambers');
+      const json = await res.json();
+      if (!json.success) return;
+      const d = json.data;
+
+      document.getElementById('chambers-exec-mode').textContent = d.is_demo_mode ? 'DEMO MODE (Simulated Servo Motion)' : (d.esp32_online ? 'LIVE ESP32 CONNECTED' : 'ESP32 OFFLINE (Commands Queued Unconfirmed)');
+      document.getElementById('chambers-angles-label').textContent = `Open ${d.servo_open_angle}° / Close ${d.servo_close_angle}°`;
+      document.getElementById('quick-open-angle').value = d.servo_open_angle;
+      document.getElementById('quick-close-angle').value = d.servo_close_angle;
+
+      const grid = document.getElementById('chambers-cards-grid');
+      grid.innerHTML = d.chambers.map(ch => {
+        const disableOpen = ch.status === 'OPEN' || ch.status === 'MOVING' || d.emergency_stopped;
+        const disableClose = ch.status === 'CLOSED' || ch.status === 'MOVING';
+        return `
+          <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg space-y-4 hover:border-[#38BDF8]/40 transition-all">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-xs font-bold text-[#38BDF8] uppercase">Chamber ${ch.chamber_id} (${ch.schedule_period})</span>
+                <h3 class="text-lg font-extrabold text-[#F8FAFC]">${ch.medicine_name}</h3>
+              </div>
+              <span class="px-2.5 py-1 rounded-full font-mono text-[11px] font-extrabold ${chamberStatusClass(ch.status)}">${ch.status}</span>
+            </div>
+            <div class="text-xs text-[#94A3B8] space-y-1 bg-[#1E293B] p-3 rounded-xl border border-[#334155]">
+              <div class="flex justify-between"><span>Hardware Pin:</span><strong class="font-mono text-[#38BDF8]">GPIO ${ch.gpio_pin}</strong></div>
+              <div class="flex justify-between"><span>Scheduled:</span><strong class="font-mono text-[#F8FAFC]">${ch.scheduled_time || '--:--'}</strong></div>
+              <div class="flex justify-between"><span>Last Operation:</span><strong class="font-mono text-[#F8FAFC]">${ch.last_operation_at || 'Never'}</strong></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5">
+              <button onclick="requestOpenChamber(${ch.chamber_id}, '${ch.medicine_name.replace(/'/g, '')}')" ${disableOpen ? 'disabled' : ''} class="py-2.5 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${disableOpen ? 'bg-[#1E293B] text-[#64748B] cursor-not-allowed border border-[#334155]' : 'bg-[#00D6A0] hover:bg-[#00b887] text-[#0B1220] shadow-md'}">
+                OPEN CHAMBER
+              </button>
+              <button onclick="closeChamber(${ch.chamber_id})" ${disableClose ? 'disabled' : ''} class="py-2.5 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${disableClose ? 'bg-[#1E293B] text-[#64748B] cursor-not-allowed border border-[#334155]' : 'bg-[#38BDF8] hover:bg-[#0284c7] text-[#0B1220] shadow-md'}">
+                CLOSE CHAMBER
+              </button>
+            </div>
+          </div>`;
+      }).join('');
+
+      const tbody = document.getElementById('chambers-ops-tbody');
+      tbody.innerHTML = d.operations.length ? d.operations.map(op => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2.5 px-3 font-mono text-[#38BDF8]">${op.timestamp}</td>
+          <td class="py-2.5 px-3 font-bold text-[#F8FAFC]">${op.chamber_id === 0 ? 'ALL' : 'Chamber ' + op.chamber_id} ${op.gpio_pin ? '(GPIO ' + op.gpio_pin + ')' : ''}</td>
+          <td class="py-2.5 px-3 font-mono font-bold">${op.action}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#1E293B] text-[#94A3B8] border border-[#334155]">${op.mode}</span></td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${op.status === 'QUEUED' || op.status === 'REJECTED' ? 'bg-[#F87171] text-white' : 'bg-[#00D6A0] text-[#0B1220]'}">${op.status}</span></td>
+          <td class="py-2.5 px-3 text-[#94A3B8]">${op.notes || ''}</td>
+        </tr>`).join('') : `<tr><td colspan="6" class="py-4 text-center text-[#94A3B8]">No chamber operations recorded yet.</td></tr>`;
+    }
+
+    function requestOpenChamber(cid, medName) {
+      pendingChamberOpenId = cid;
+      document.getElementById('chamber-confirm-text').textContent = `Confirm manual OPEN for Chamber ${cid} (${medName})? Ensure no obstruction is present.`;
+      document.getElementById('chamber-confirm-modal').classList.remove('hidden');
+    }
+
+    async function closeChamberConfirm(confirmed) {
+      document.getElementById('chamber-confirm-modal').classList.add('hidden');
+      if (!confirmed || !pendingChamberOpenId) return;
+      const cid = pendingChamberOpenId;
+      pendingChamberOpenId = null;
+      const res = await fetch(`/api/chambers/${cid}/open`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) alert(data.error || 'Could not open chamber.');
+      await Promise.all([loadChambersData(), loadHealthData()]);
+      setTimeout(loadChambersData, 600);
+    }
+
+    async function closeChamber(cid) {
+      const res = await fetch(`/api/chambers/${cid}/close`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) alert(data.error || 'Could not close chamber.');
+      await Promise.all([loadChambersData(), loadHealthData()]);
+      setTimeout(loadChambersData, 600);
+    }
+
+    async function triggerEmergencyStop() {
+      const res = await fetch('/api/device/emergency-stop', { method: 'POST' });
+      const data = await res.json();
+      await Promise.all([loadHealthData(), loadChambersData(), loadNotifications()]);
+      alert(data.message);
+    }
+
+    async function clearEmergencyStop() {
+      await fetch('/api/device/emergency-stop/clear', { method: 'POST' });
+      await Promise.all([loadHealthData(), loadChambersData()]);
+    }
+
+    async function saveQuickServoAngles() {
+      const openA = parseInt(document.getElementById('quick-open-angle').value, 10);
+      const closeA = parseInt(document.getElementById('quick-close-angle').value, 10);
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ servo_open_angle: openA, servo_close_angle: closeA })
+      });
+      loadChambersData();
+    }
+
+    // INVENTORY / ULTRASONIC
+    async function loadInventoryData() {
+      const res = await fetch('/api/inventory');
+      const json = await res.json();
+      if (!json.success) return;
+      const us = json.ultrasonic;
+      document.getElementById('inv-us-thresh-input').value = us.threshold_cm;
+      document.getElementById('inv-us-distance').textContent = us.sensor_connected ? us.measured_distance_cm.toFixed(1) : '--';
+      const badge = document.getElementById('inv-us-badge');
+      badge.textContent = us.status;
+      badge.className = `px-3 py-0.5 rounded-full text-xs font-extrabold ${us.status === 'Object detected' ? 'bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40' : (us.status === 'Object not detected' ? 'bg-[#1E293B] text-[#94A3B8] border border-[#334155]' : 'bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40')}`;
+
+      document.getElementById('inventory-cards-container').innerHTML = (json.data || []).map(item => `
+        <div class="bg-[#151F32] rounded-2xl border border-[#1E293B] p-5 shadow-lg space-y-2 text-xs">
+          <div class="flex justify-between items-center">
+            <span class="font-extrabold text-sm text-[#F8FAFC]">Chamber ${item.compartment_id}: ${item.medicine_name}</span>
+          </div>
+          <div class="text-[#94A3B8]">Ultrasonic Reading: <strong class="font-mono text-[#F8FAFC]">${us.sensor_connected ? us.measured_distance_cm.toFixed(1) + ' cm' : 'SENSOR ERROR'}</strong></div>
+          <div class="text-[#38BDF8] font-semibold">State: ${us.status}</div>
+        </div>`).join('');
+    }
+
+    async function saveUltrasonicThreshold() {
+      const val = parseFloat(document.getElementById('inv-us-thresh-input').value);
+      await fetch('/api/inventory/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ultrasonic_threshold_cm: val })
+      });
+      loadInventoryData();
+    }
+
+    // HISTORY
+    async function loadHistoryData() {
+      const filter = document.getElementById('history-source-filter')?.value || 'all';
+      const q = filter === 'all' ? '' : `?include_demo=${filter}`;
+      const res = await fetch(`/api/dispensing/history${q}`);
+      const json = await res.json();
+      if (!json.success) return;
+      const list = json.data || [];
+      const ret = list.filter(l => l.event_type === 'RETRIEVED' || l.event_type === 'ACKNOWLEDGED').length;
+      const mis = list.filter(l => l.event_type === 'MISSED').length;
+      const resolved = ret + mis;
+      document.getElementById('hist-total-count').textContent = list.length;
+      document.getElementById('hist-retrieved-count').textContent = ret;
+      document.getElementById('hist-missed-count').textContent = mis;
+      document.getElementById('hist-adherence-pct').textContent = resolved > 0 ? `${Math.round((ret / resolved) * 100)}%` : '--';
+
+      document.getElementById('dispensing-history-tbody').innerHTML = list.length ? list.map(item => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2.5 px-3 font-mono text-[#38BDF8]">${item.timestamp}</td>
+          <td class="py-2.5 px-3 font-bold text-[#F8FAFC]">${item.medicine_name}</td>
+          <td class="py-2.5 px-3">Chamber ${item.compartment_id}</td>
+          <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${item.event_type === 'MISSED' ? 'bg-[#F87171]/20 text-[#F87171] border border-[#F87171]/40' : (item.event_type === 'SNOOZED' ? 'bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40' : 'bg-[#00D6A0]/20 text-[#00D6A0] border border-[#00D6A0]/40')}">${item.event_type}</span></td>
+          <td class="py-2.5 px-3 font-mono text-[#94A3B8]">Try ${item.attempt_number || 1}/3 (Snooze: ${item.snooze_count || 0})</td>
+          <td class="py-2.5 px-3">${item.is_demo ? '<span class="text-[#38BDF8]">[DEMO] </span>' : ''}${item.method}</td>
+        </tr>`).join('') : `<tr><td colspan="6" class="py-4 text-center text-[#94A3B8]">No dispensing records found.</td></tr>`;
+    }
+
+    // WEEKLY REPORTS
+    function initReportDateInputs() {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 6);
+      const fmt = d => d.toISOString().split('T')[0];
+      if (!document.getElementById('rep-end-date').value) document.getElementById('rep-end-date').value = fmt(end);
+      if (!document.getElementById('rep-start-date').value) document.getElementById('rep-start-date').value = fmt(start);
+    }
+
+    async function loadWeeklyReport() {
+      initReportDateInputs();
+      const start = document.getElementById('rep-start-date').value;
+      const end = document.getElementById('rep-end-date').value;
+      const incDemo = document.getElementById('rep-include-demo').checked ? 1 : 0;
+
+      const res = await fetch(`/api/reports/weekly?start_date=${start}&end_date=${end}&include_demo=${incDemo}`);
+      const json = await res.json();
+      if (!json.success) return;
+
+      const hr = json.health_report;
+      const mr = json.medicine_report;
+      const dr = json.device_report;
+      const prov = json.provenance;
+
+      document.getElementById('rep-provenance-label').textContent = `Real: ${prov.real_health_count} health / ${prov.real_disp_count} dose | Demo: ${prov.demo_health_count} health / ${prov.demo_disp_count} dose`;
+      const insufficient = !hr.has_sufficient_data && !mr.has_sufficient_data;
+      document.getElementById('rep-insufficient-banner').classList.toggle('hidden', !insufficient);
+
+      // Dashboard summary preview update
+      if (!incDemo) {
+        document.getElementById('dash-wk-hr').textContent = hr.avg_hr != null ? `${hr.avg_hr} BPM` : 'No Data';
+        document.getElementById('dash-wk-spo2').textContent = hr.avg_spo2 != null ? `${hr.avg_spo2}%` : 'No Data';
+        document.getElementById('dash-wk-adh').textContent = mr.adherence_percent != null ? `${mr.adherence_percent}%` : 'No Data';
+        document.getElementById('dash-wk-alerts').textContent = hr.abnormal_reading_count || 0;
+      }
+
+      document.getElementById('rep-avg-hr').textContent = hr.avg_hr != null ? `${hr.avg_hr} BPM` : 'Insufficient';
+      document.getElementById('rep-delta-hr').textContent = `Prev week: ${hr.prev_period.avg_hr != null ? hr.prev_period.avg_hr + ' BPM' : '--'}`;
+      document.getElementById('rep-minmax-hr').textContent = hr.min_hr != null ? `${hr.min_hr} / ${hr.max_hr}` : '--';
+      document.getElementById('rep-spo2-stats').textContent = hr.avg_spo2 != null ? `${hr.avg_spo2}% / ${hr.min_spo2}%` : 'Insufficient';
+      document.getElementById('rep-delta-spo2').textContent = `Prev week: ${hr.prev_period.avg_spo2 != null ? hr.prev_period.avg_spo2 + '%' : '--'}`;
+      document.getElementById('rep-temp-stats').textContent = hr.avg_temp != null ? `${hr.avg_temp}°C` : 'Insufficient';
+      document.getElementById('rep-temp-var').textContent = hr.temp_variation != null ? `Variation: ±${hr.temp_variation}°C` : 'Var: --';
+      document.getElementById('rep-low-alerts').textContent = hr.low_alert_count;
+      document.getElementById('rep-high-alerts').textContent = hr.high_alert_count;
+
+      document.getElementById('rep-adh-pct').textContent = mr.adherence_percent != null ? `${mr.adherence_percent}%` : 'Insufficient';
+      document.getElementById('rep-delta-adh').textContent = `Prev week: ${mr.prev_period.adherence_percent != null ? mr.prev_period.adherence_percent + '%' : '--'}`;
+      document.getElementById('rep-med-sched').textContent = mr.scheduled_doses_triggered;
+      document.getElementById('rep-med-taken').textContent = mr.acknowledged_count;
+      document.getElementById('rep-med-missed').textContent = mr.missed_count;
+      document.getElementById('rep-med-snoozes').textContent = mr.snooze_attempts_total;
+
+      document.getElementById('rep-per-med-tbody').innerHTML = mr.per_medicine.length ? mr.per_medicine.map(p => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2 px-3 font-bold text-[#F8FAFC]">${p.medicine_name}</td>
+          <td class="py-2 px-3 font-mono text-[#38BDF8]">Chamber ${p.compartment_id}</td>
+          <td class="py-2 px-3 text-[#00D6A0] font-bold font-mono">${p.acknowledged}</td>
+          <td class="py-2 px-3 text-[#F87171] font-bold font-mono">${p.missed}</td>
+          <td class="py-2 px-3 text-[#F59E0B] font-mono">${p.snoozes}</td>
+          <td class="py-2 px-3 font-mono font-bold">${p.adherence_percent != null ? p.adherence_percent + '%' : '--'}</td>
+        </tr>`).join('') : `<tr><td colspan="6" class="py-4 text-center text-[#94A3B8]">No per-medicine stats.</td></tr>`;
+
+      document.getElementById('rep-dev-us').textContent = dr.current_ultrasonic_status;
+      document.getElementById('rep-dev-servos').textContent = dr.servo_operation_count;
+      document.getElementById('rep-dev-errors').textContent = dr.sensor_errors.length;
+
+      document.getElementById('rep-conn-tbody').innerHTML = dr.recent_connectivity_events.length ? dr.recent_connectivity_events.map(c => `
+        <tr class="hover:bg-[#1E293B]/50 transition-colors">
+          <td class="py-2 px-3 font-mono text-[#38BDF8]">${c.timestamp}</td>
+          <td class="py-2 px-3 font-bold text-[#F8FAFC]">${c.event_type}</td>
+          <td class="py-2 px-3 text-[#94A3B8]">${c.details || ''}</td>
+        </tr>`).join('')
+        : `<tr><td colspan="3" class="py-4 text-center text-[#94A3B8]">No connectivity events logged in range.</td></tr>`;
+
+      renderWeeklyCharts(hr.daily_series || [], mr.daily_series || []);
+    }
+
+    function renderWeeklyCharts(healthDaily, medDaily) {
+      if (weeklyHealthChart) weeklyHealthChart.destroy();
+      if (weeklyAdherenceChart) weeklyAdherenceChart.destroy();
+
+      const darkGrid = { color: 'rgba(148, 163, 184, 0.08)' };
+      const darkTicks = { color: '#94A3B8', font: { family: 'JetBrains Mono', size: 10 } };
+
+      const ctxH = document.getElementById('weeklyHealthChart').getContext('2d');
+      weeklyHealthChart = new Chart(ctxH, {
+        type: 'line',
+        data: {
+          labels: healthDaily.map(d => d.day),
+          datasets: [
+            { label: 'Daily Avg HR (BPM)', data: healthDaily.map(d => d.avg_hr), borderColor: '#38BDF8', tension: 0.3, pointRadius: 3, pointBackgroundColor: '#38BDF8' },
+            { label: 'Daily Avg SpO₂ (%)', data: healthDaily.map(d => d.avg_spo2), borderColor: '#00D6A0', tension: 0.3, pointRadius: 3, pointBackgroundColor: '#00D6A0' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#F8FAFC', font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' } } } },
+          scales: { y: { grid: darkGrid, ticks: darkTicks }, x: { grid: darkGrid, ticks: darkTicks } }
+        }
+      });
+
+      const ctxM = document.getElementById('weeklyAdherenceChart').getContext('2d');
+      weeklyAdherenceChart = new Chart(ctxM, {
+        type: 'bar',
+        data: {
+          labels: medDaily.map(d => d.day),
+          datasets: [
+            { label: 'Taken', data: medDaily.map(d => d.taken), backgroundColor: '#00D6A0', borderRadius: 6 },
+            { label: 'Missed', data: medDaily.map(d => d.missed), backgroundColor: '#F87171', borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#F8FAFC', font: { family: 'Plus Jakarta Sans', size: 11, weight: '600' } } } },
+          scales: { y: { grid: darkGrid, ticks: darkTicks }, x: { grid: darkGrid, ticks: darkTicks } }
+        }
+      });
+    }
+
+    function downloadWeeklyReportPdf() {
+      const pName = document.getElementById('header-patient-name').textContent;
+      const start = document.getElementById('rep-start-date').value;
+      const end = document.getElementById('rep-end-date').value;
+      document.getElementById('report-print-meta').textContent = `Patient: ${pName} | Period: ${start} to ${end} | Generated: ${new Date().toLocaleString()}`;
+      window.print();
+    }
+
+    // DEVICE STATUS & COMMANDS
+    async function loadDeviceStatus() {
+      const res = await fetch('/api/device/status');
+      const json = await res.json();
+      if (!json.success) return;
+      const d = json.data;
+      updateConnectionUI(d);
+      document.getElementById('dev-last-command').textContent = d.last_command || 'NONE';
+      document.getElementById('dev-last-status').textContent = d.last_command_status || 'IDLE';
+      document.getElementById('diag-tmp117').textContent = d.tmp117_ok ? 'ONLINE (0x48)' : 'OFFLINE / ERROR';
+      document.getElementById('diag-tmp117').className = d.tmp117_ok ? 'font-mono font-extrabold text-[#00D6A0]' : 'font-mono font-extrabold text-[#F87171]';
+      document.getElementById('diag-max30102').textContent = d.max30102_ok ? 'ONLINE (0x57)' : 'OFFLINE / ERROR';
+      document.getElementById('diag-max30102').className = d.max30102_ok ? 'font-mono font-extrabold text-[#00D6A0]' : 'font-mono font-extrabold text-[#F87171]';
+      document.getElementById('diag-ds3231').textContent = d.ds3231_ok ? 'ONLINE (0x68)' : 'OFFLINE / ERROR';
+      document.getElementById('diag-ds3231').className = d.ds3231_ok ? 'font-mono font-extrabold text-[#00D6A0]' : 'font-mono font-extrabold text-[#F87171]';
+      document.getElementById('diag-us').textContent = d.ultrasonic_ok ? `${Number(d.ultrasonic_distance).toFixed(1)} cm (${d.ultrasonic_status})` : 'SENSOR ERROR';
+      document.getElementById('diag-us').className = d.ultrasonic_ok ? 'font-mono font-extrabold text-[#00D6A0]' : 'font-mono font-extrabold text-[#F87171]';
+    }
+
+    async function triggerCommand(command, compartment = 1) {
+      const res = await fetch('/api/device/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, compartment })
+      });
+      const data = await res.json();
+      document.getElementById('dev-last-command').textContent = command;
+      document.getElementById('dev-last-status').textContent = data.status || (data.success ? 'SENT' : 'FAILED');
+      if (!data.confirmed && data.status === 'QUEUED') {
+        alert(data.message);
+      }
+      loadDeviceStatus();
+    }
+
+    function confirmServoTest(compNum) {
+      if (confirm(`Run 3-second test sweep on Chamber ${compNum}?`)) triggerCommand('TEST_SERVO', compNum);
+    }
+
+    async function loadNotifications() {
+      const res = await fetch('/api/notifications');
+      const json = await res.json();
+      if (!json.success) return;
+      const badge = document.getElementById('unread-notif-badge');
+      badge.textContent = json.unread_count;
+      badge.classList.toggle('hidden', json.unread_count === 0);
+
+      const listHtml = (json.data || []).map(n => `
+        <div class="p-3 rounded-xl border ${n.is_read ? 'bg-[#1E293B] border-[#334155]' : 'bg-[#1E293B] border-[#38BDF8]/50'}">
+          <div class="flex justify-between items-center mb-1">
+            <strong class="text-[#F8FAFC]">${n.title}</strong>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${n.priority === 'HIGH' || n.priority === 'CRITICAL' ? 'bg-[#F87171] text-white' : 'bg-[#38BDF8] text-[#0B1220]'}">${n.priority}</span>
+          </div>
+          <p class="text-[#94A3B8]">${n.message}</p>
+          <span class="text-[10px] text-[#38BDF8] block mt-1">${n.timestamp}</span>
+        </div>`).join('');
+
+      document.getElementById('notif-list-container').innerHTML = listHtml || '<p class="text-[#94A3B8]">No notifications.</p>';
+      const recentDash = document.getElementById('dash-recent-alerts');
+      if (recentDash) {
+        const urgent = (json.data || []).slice(0, 4);
+        recentDash.innerHTML = urgent.length ? urgent.map(n => `
+          <div class="p-2.5 rounded-xl border border-[#334155] bg-[#1E293B]">
+            <div class="flex justify-between"><strong class="text-[#F8FAFC]">${n.title}</strong><span class="text-[10px] font-bold text-[#F87171]">${n.priority}</span></div>
+            <p class="text-[11px] text-[#94A3B8] truncate">${n.message}</p>
+          </div>`).join('') : '<p class="text-[#94A3B8] italic">No recent alerts.</p>';
+      }
+    }
+
+    async function clearNotifications() {
+      await fetch('/api/notifications/clear', { method: 'POST' });
+      loadNotifications();
+    }
+
+    async function loadSettings() {
+      const res = await fetch('/api/settings');
+      const json = await res.json();
+      if (!json.success || !json.data) return;
+      const s = json.data;
+      cachedSettings = s;
+      document.getElementById('header-patient-name').textContent = s.patient_name;
+      document.getElementById('set-patient-name').value = s.patient_name;
+      document.getElementById('set-patient-age').value = s.patient_age;
+      document.getElementById('set-doctor-name').value = s.doctor_name;
+      document.getElementById('set-emergency-contact').value = s.emergency_contact;
+      document.getElementById('set-hr-low').value = s.low_hr_threshold ?? 60;
+      document.getElementById('set-hr-high').value = s.high_hr_threshold ?? 100;
+      document.getElementById('set-spo2-thresh').value = s.low_spo2_threshold ?? 90;
+      document.getElementById('set-temp-low').value = s.low_temp_threshold_c ?? 36.1;
+      document.getElementById('set-fever-thresh').value = s.high_temp_threshold_c ?? 37.2;
+      document.getElementById('set-timeout-sec').value = s.reminder_timeout_sec ?? 300;
+      document.getElementById('set-us-thresh').value = s.ultrasonic_threshold_cm ?? 5.0;
+      document.getElementById('set-servo-open').value = s.servo_open_angle ?? 90;
+      document.getElementById('set-servo-close').value = s.servo_close_angle ?? 0;
+      document.getElementById('set-buzzer-pin').value = s.buzzer_pin ?? 4;
+      document.getElementById('set-us-trig').value = s.ultrasonic_trig_pin ?? 5;
+      document.getElementById('set-us-echo').value = s.ultrasonic_echo_pin ?? 17;
+      document.getElementById('set-esp-endpoint').value = s.esp32_endpoint ?? '';
+      document.getElementById('dev-pin-buzzer').textContent = `GPIO ${s.buzzer_pin ?? 4} (Cfg)`;
+      document.getElementById('dev-pin-us').textContent = `TRIG ${s.ultrasonic_trig_pin ?? 5} / ECHO ${s.ultrasonic_echo_pin ?? 17}`;
+    }
+
+    async function saveSettingsForm(e) {
+      e.preventDefault();
+      const payload = {
+        patient_name: document.getElementById('set-patient-name').value,
+        patient_age: parseInt(document.getElementById('set-patient-age').value, 10),
+        doctor_name: document.getElementById('set-doctor-name').value,
+        emergency_contact: document.getElementById('set-emergency-contact').value,
+        low_hr_threshold: parseInt(document.getElementById('set-hr-low').value, 10),
+        high_hr_threshold: parseInt(document.getElementById('set-hr-high').value, 10),
+        low_spo2_threshold: parseInt(document.getElementById('set-spo2-thresh').value, 10),
+        low_temp_threshold_c: parseFloat(document.getElementById('set-temp-low').value),
+        high_temp_threshold_c: parseFloat(document.getElementById('set-fever-thresh').value),
+        reminder_timeout_sec: parseInt(document.getElementById('set-timeout-sec').value, 10),
+        ultrasonic_threshold_cm: parseFloat(document.getElementById('set-us-thresh').value),
+        servo_open_angle: parseInt(document.getElementById('set-servo-open').value, 10),
+        servo_close_angle: parseInt(document.getElementById('set-servo-close').value, 10),
+        buzzer_pin: parseInt(document.getElementById('set-buzzer-pin').value, 10),
+        ultrasonic_trig_pin: parseInt(document.getElementById('set-us-trig').value, 10),
+        ultrasonic_echo_pin: parseInt(document.getElementById('set-us-echo').value, 10),
+        esp32_endpoint: document.getElementById('set-esp-endpoint').value
+      };
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      await loadSettings();
+      alert('Settings saved and queued for ESP32 sync!');
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws/telemetry`);
+      ws.onmessage = () => {
+        loadHealthData();
+        loadRemindersData();
+        loadNotifications();
+        if (currentNavPage === 'chambers') loadChambersData();
+        if (currentNavPage === 'device') loadDeviceStatus();
+        if (currentNavPage === 'inventory') loadInventoryData();
+      };
+      ws.onclose = () => setTimeout(connectWebSocket, 3000);
+    }
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('header-date').textContent = now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+      document.getElementById('header-clock').textContent = now.toLocaleTimeString();
+    }, 1000);
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      initCharts();
+      await loadSettings();
+      await Promise.all([
+        loadHealthData(),
+        loadMedicinesData(),
+        loadRemindersData(),
+        loadChambersData(),
+        loadInventoryData(),
+        loadHistoryData(),
+        loadNotifications(),
+        loadWeeklyReport()
+      ]);
+      connectWebSocket();
+    });
+  </script>
+</body>
+</html>

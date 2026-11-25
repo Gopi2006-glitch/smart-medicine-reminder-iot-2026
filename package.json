@@ -1,0 +1,27 @@
+{
+  "name": "smartmed-iot-platform",
+  "version": "2.0.0",
+  "description": "SmartMed - Smart Medicine Reminder & Real-Time IoT Health Monitoring Platform",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "node backend/server.js",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build"
+  },
+  "keywords": [
+    "iot",
+    "esp32",
+    "health-monitoring",
+    "smart-medicine-reminder",
+    "tmp117",
+    "max30102"
+  ],
+  "author": "SmartMed Engineering Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  }
+}
